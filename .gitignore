@@ -1,0 +1,32 @@
+# venv
+.venv/
+
+# python
+__pycache__/
+*.py[cod]
+*.so
+
+# notebooks
+.ipynb_checkpoints/
+
+# data / outputs
+data/
+outputs/
+results/
+*.fits
+*.hdf5
+*.h5
+*.npy
+*.npz
+*.pkl
+*.pickle
+
+# OS/editor
+.DS_Store
+.vscode/
+.idea/
+
+# pytest/coverage
+.pytest_cache/
+.coverage
+htmlcov/
