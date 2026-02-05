@@ -1,12 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Usage:
-#   bash batch/run_spectra_single.sh <SID> [extra args forwarded]
-#
-# Example sanity check:
-#   bash batch/run_spectra_single.sh 563732 --alpha-keep 0 --max-rays 4 --filter-mode noflip --no-plots --verbose
-
 SID="${1:?Need SID as first argument}"
 shift || true
 
@@ -19,8 +13,32 @@ SPECTRA_OUT_BASE=""   # empty -> write under ORIENT_OUT_BASE/sid<SID>/
 module purge
 module load hwloc-2.9.3-gcc-11.2.0
 
-# conda
-conda deactivate 2>/dev/null || true
+# --- conda init for non-interactive shells ---
+if [[ -f "$HOME/.bashrc" ]]; then
+  # safe to source; may contain module messages
+  source "$HOME/.bashrc" >/dev/null 2>&1 || true
+fi
+
+# Prefer conda hook if available
+if command -v conda >/dev/null 2>&1; then
+  eval "$(conda shell.bash hook)" >/dev/null 2>&1 || true
+fi
+
+# Fallback: source conda.sh directly (common on clusters)
+if ! command -v conda >/dev/null 2>&1; then
+  if [[ -f "$HOME/miniconda3/etc/profile.d/conda.sh" ]]; then
+    source "$HOME/miniconda3/etc/profile.d/conda.sh"
+  elif [[ -f "$HOME/anaconda3/etc/profile.d/conda.sh" ]]; then
+    source "$HOME/anaconda3/etc/profile.d/conda.sh"
+  elif [[ -f "/home/tsingh65/.conda/etc/profile.d/conda.sh" ]]; then
+    source "/home/tsingh65/.conda/etc/profile.d/conda.sh"
+  else
+    echo "FATAL: could not find conda.sh; conda not initializable in this shell."
+    exit 2
+  fi
+fi
+
+# DO NOT conda deactivate here (it is triggering libxml2_deactivate.sh 'unbound variable' under set -u)
 conda activate trident
 
 export MPLBACKEND=Agg
