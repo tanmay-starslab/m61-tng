@@ -1,51 +1,35 @@
-#!/bin/bash
-#SBATCH --job-name=spec_one
-#SBATCH --output=spec_one_%j.out
-#SBATCH --error=spec_one_%j.err
-#SBATCH --partition=htc
-#SBATCH --nodes=1
-#SBATCH --ntasks=1
-#SBATCH --cpus-per-task=4
-#SBATCH --mem=10G
-#SBATCH --time=04:00:00
-
+#!/usr/bin/env bash
 set -euo pipefail
 
-SID="${1:?Usage: sbatch run_spectra_single.sh <SID>}"
+# Usage:
+#   bash batch/run_spectra_single.sh <SID> [extra args forwarded]
+#
+# Example sanity check:
+#   bash batch/run_spectra_single.sh 563732 --alpha-keep 0 --max-rays 4 --filter-mode noflip --no-plots --verbose
 
-REPO="/home/tsingh65/m61-tng"
-OUT_BASE="/scratch/tsingh65/m61-tng/outputs"
+SID="${1:?Need SID as first argument}"
+shift || true
+
+REPO="$HOME/m61-tng"
+
 CUTOUT_ROOT="/scratch/tsingh65/TNG50-1_snap99"
+ORIENT_OUT_BASE="/scratch/tsingh65/m61-tng/outputs"
+SPECTRA_OUT_BASE=""   # empty -> write under ORIENT_OUT_BASE/sid<SID>/
 
 module purge
-module load hwloc-2.9.3-gcc-11.2.0 2>/dev/null || true
-module load mamba
-eval "$(conda shell.bash hook)"
+module load hwloc-2.9.3-gcc-11.2.0
+
+# conda
+conda deactivate 2>/dev/null || true
 conda activate trident
 
-export LD_LIBRARY_PATH="$CONDA_PREFIX/lib:${LD_LIBRARY_PATH:-}"
-export PATH="$CONDA_PREFIX/bin:$PATH"
-
-export HDF5_USE_FILE_LOCKING=FALSE
-export HDF5_DISABLE_VERSION_CHECK=2
-export PYTHONNOUSERSITE=1
 export MPLBACKEND=Agg
+export LD_LIBRARY_PATH="${CONDA_PREFIX}/lib:${LD_LIBRARY_PATH:-}"
 
-export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK}
-export MKL_NUM_THREADS=${SLURM_CPUS_PER_TASK}
-export OPENBLAS_NUM_THREADS=${SLURM_CPUS_PER_TASK}
-export NUMEXPR_NUM_THREADS=${SLURM_CPUS_PER_TASK}
-
-export PYTHONPATH="${REPO}/notebooks:${PYTHONPATH:-}"
-
-export TRIDENT_RAY_TMP="${SLURM_TMPDIR:-${OUT_BASE}/sid${SID}/_tmp_trident}"
-mkdir -p "$TRIDENT_RAY_TMP"
-
-cd "$REPO"
-
-python -u "${REPO}/notebooks/run_spectra_one_sid.py" \
+python -u "$REPO/notebooks/run_spectra_one_sid.py" \
   --sid "$SID" \
   --snap 99 \
-  --out-base "$OUT_BASE" \
   --cutout-root "$CUTOUT_ROOT" \
-  --verbose
+  --orient-out-base "$ORIENT_OUT_BASE" \
+  ${SPECTRA_OUT_BASE:+--spectra-out-base "$SPECTRA_OUT_BASE"} \
+  "$@"

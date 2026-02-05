@@ -1,35 +1,37 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""run_spectra_one_sid.py
 
-Wrapper around spectra_batch_module.py for the M61-TNG workflow.
+"""
+run_spectra_one_sid.py
 
-Expected directory layout from orient_m61.py:
-  OUT_BASE/sid<SID>/rays_and_recipes_sid<SID>_snap<SNAP>_<RUN_LABEL>/rays_sid<SID>.csv
+Thin wrapper to run spectra generation for a single SubhaloID (SID) using
+orient_m61 outputs + a cutout root.
 
-Cutout layout:
-  CUTOUT_ROOT/out_sub_<SID>/*.hdf5
+Typical layout:
+  cutout_root/out_sub_<SID>/*.hdf5
+  orient_out_base/sid<SID>/rays_and_recipes_sid<SID>_snap<SNAP>_<RUN>/rays_sid<SID>.csv
 
-This script:
-  - finds the cutout file for SID
-  - points spectra_batch_module at rays_base=OUT_BASE/sid<SID>
-  - writes spectra under OUT_BASE/sid<SID>/rays_and_spectra_sid<SID>_snap<SNAP>_<RUN_LABEL>/
+Sanity-check knobs:
+  --alpha-keep 0
+  --max-rays 4
+  --filter-mode noflip
+  --no-plots
 """
 
 import os
 import glob
 import argparse
 
-from spectra_batch_module import JobPaths, RunConfig, run_all_runs_for_sid
+from spectra_batch_module import JobPaths, JobParams, SpectraConfig, run_all_runs_for_sid
 
 
-def find_cutout_h5(cutout_root: str, sid: int) -> str:
+def find_cutout_h5(sid: int, cutout_root: str) -> str:
     sid = int(sid)
-    d = os.path.join(os.path.abspath(cutout_root), f"out_sub_{sid}")
+    sub_dir = os.path.join(cutout_root, f"out_sub_{sid}")
     pats = [
-        os.path.join(d, "cutout*sub*.hdf5"),
-        os.path.join(d, "cutout*.hdf5"),
-        os.path.join(d, "*.hdf5"),
+        os.path.join(sub_dir, "cutout*sub*.hdf5"),
+        os.path.join(sub_dir, "cutout*.hdf5"),
+        os.path.join(sub_dir, "*.hdf5"),
     ]
     for pat in pats:
         hits = sorted(glob.glob(pat))
@@ -39,60 +41,84 @@ def find_cutout_h5(cutout_root: str, sid: int) -> str:
 
 
 def parse_args():
-    p = argparse.ArgumentParser()
+    p = argparse.ArgumentParser(
+        description="Run spectra for one SID using orient_m61 outputs.",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
     p.add_argument("--sid", type=int, required=True)
     p.add_argument("--snap", type=int, default=99)
 
-    p.add_argument("--out-base", required=True,
-                   help="Orientation outputs base (contains sid<SID>/).")
-    p.add_argument("--cutout-root", required=True,
-                   help="Cutout root containing out_sub_<SID>/.")
+    p.add_argument("--cutout-root", required=True, help="Root containing out_sub_<SID>/")
+    p.add_argument("--orient-out-base", required=True, help="Same --out-base used in orient_m61.py")
+    p.add_argument("--spectra-out-base", default="", help="If empty, writes under orient-out-base/sid<SID>/")
 
-    p.add_argument("--run-label", default="",
-                   help="If set, run only this label (e.g. L3Rvir or L4Rvir). If empty, run all available.")
-    p.add_argument("--ion", default="H I",
-                   help="Ion species in Trident (e.g. 'H I', 'Mg II', 'O VI').")
-    p.add_argument("--line-list", default="lines.txt",
-                   help="Trident line list filename (must be on PYTHONPATH or local).")
-    p.add_argument("--n-processes", type=int, default=1)
-    p.add_argument("--overwrite", action="store_true")
+    p.add_argument("--run-labels", default="L3Rvir,L4Rvir")
+    p.add_argument("--filter-mode", choices=["noflip", "flip"], default=None)
+
+    p.add_argument("--alpha-keep", default="", help="Comma-separated alpha list, e.g. '0,90'")
+    p.add_argument("--max-rays", type=int, default=0)
+    p.add_argument("--sightline-ids", default="", help="Comma-separated IDs, e.g. 'QSO-A,QSO-B'")
+
+    p.add_argument("--lines", default="H I 1216,C II 1335,Si III 1206")
+    p.add_argument("--instrument", default="COS-G130M")
+    p.add_argument("--zoom-half-A", type=float, default=3.0)
+    p.add_argument("--no-plots", action="store_true")
     p.add_argument("--verbose", action="store_true")
+
     return p.parse_args()
 
 
 def main():
-    args = parse_args()
+    a = parse_args()
 
-    sid = int(args.sid)
-    snap = int(args.snap)
-    out_base = os.path.abspath(args.out_base)
-    cutout_root = os.path.abspath(args.cutout_root)
+    sid = int(a.sid)
+    snap = int(a.snap)
 
-    sid_dir = os.path.join(out_base, f"sid{sid}")
-    if not os.path.isdir(sid_dir):
-        raise FileNotFoundError(f"Missing orientation output directory: {sid_dir}")
+    cutout_h5 = find_cutout_h5(sid, a.cutout_root)
+    if not cutout_h5:
+        raise FileNotFoundError(f"No cutout .hdf5 found for SID={sid} under {a.cutout_root}/out_sub_{sid}/")
 
-    cutout = find_cutout_h5(cutout_root, sid)
-    if not cutout or (not os.path.isfile(cutout)):
-        raise FileNotFoundError(f"Missing cutout for sid={sid} under {cutout_root}/out_sub_{sid}/")
+    rays_base = os.path.join(a.orient_out_base, f"sid{sid}")
 
-    # spectra_batch_module expects rays_base to contain rays_and_recipes_sid{sid}_snap{snap}_{run}/
-    paths = JobPaths(cutout_h5=cutout, rays_base=sid_dir, output_base=sid_dir)
+    spectra_base = a.spectra_out_base.strip()
+    if spectra_base:
+        output_base = os.path.join(spectra_base, f"sid{sid}")
+    else:
+        output_base = os.path.join(a.orient_out_base, f"sid{sid}")
 
-    cfg = RunConfig(
-        sid=sid,
-        snap=snap,
-        ion=args.ion,
-        line_list=args.line_list,
-        n_processes=int(args.n_processes),
-        overwrite=bool(args.overwrite),
-        verbose=bool(args.verbose),
+    alpha_keep = None
+    if a.alpha_keep.strip():
+        alpha_keep = [int(x) for x in a.alpha_keep.split(",") if x.strip()]
+
+    sightline_ids = None
+    if a.sightline_ids.strip():
+        sightline_ids = [x.strip() for x in a.sightline_ids.split(",") if x.strip()]
+
+    paths = JobPaths(
+        cutout_h5=cutout_h5,
+        rays_base=rays_base,
+        output_base=output_base,
     )
 
-    if args.run_label:
-        run_all_runs_for_sid(paths, cfg, allowed_run_labels=[args.run_label])
-    else:
-        run_all_runs_for_sid(paths, cfg, allowed_run_labels=None)
+    params = JobParams(
+        sid=sid,
+        snap=snap,
+        run_labels=[s.strip() for s in a.run_labels.split(",") if s.strip()],
+        filter_mode=a.filter_mode,
+        alpha_keep=alpha_keep,
+        sightline_ids=sightline_ids,
+        max_rays=(int(a.max_rays) if a.max_rays and int(a.max_rays) > 0 else None),
+        verbose=bool(a.verbose),
+    )
+
+    cfg = SpectraConfig(
+        lines=[s.strip() for s in a.lines.split(",") if s.strip()],
+        instrument=a.instrument,
+        zoom_half_A=float(a.zoom_half_A),
+        make_plots=(not a.no_plots),
+    )
+
+    run_all_runs_for_sid(paths, params, cfg)
 
 
 if __name__ == "__main__":
