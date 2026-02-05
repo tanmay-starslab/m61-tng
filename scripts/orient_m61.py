@@ -617,125 +617,84 @@ def make_debug_figure(
 # Loaders: obs CSV and matches CSV
 # ──────────────────────────────────────────────────────────────────────
 
-def load_obs_geometry(obs_csv: str) -> Dict[str, Any]:
+def load_obs_geometry(obs_csv_path):
     """
-    Parse M61 observation CSV into:
-      - galaxy-level parameters: inc_deg, pa_deg, rvir_kpc (optional)
-      - list of sightlines: [{id, rho_kpc, phi_deg, ...}, ...]
+    Load observed geometry from the DIISC M61 table CSV.
 
-    This function is intentionally column-flexible. It will search for common names.
-    Minimum needed:
-      - inc (one value)
-      - PA (one value)  (if missing, defaults to 0)
-      - for each sightline: rho, phi
+    This DIISC table DOES NOT provide a column literally named 'phi'.
+    It provides:
+      - impact_kpc   : impact parameter (rho)
+      - theta_deg    : azimuthal angle (use as phi_deg)
+      - inclination_deg : galaxy inclination
+      - PA_deg       : galaxy position angle (optional for downstream)
+      - Rvir_kpc     : virial radius
+
+    Returns a dict with at least: rho_kpc, phi_deg, inc_deg, Rvir_kpc.
     """
-    df = pd.read_csv(obs_csv)
 
-    # Try to find inc / PA / Rvir
-    inc_col = None
-    pa_col = None
-    rvir_col = None
+    df = pd.read_csv(obs_csv_path)
 
-    for c in ["inc_deg", "inc", "Inclination", "inclination", "i_deg", "i"]:
-        if c in df.columns:
-            inc_col = c
-            break
+    if df.shape[0] < 1:
+        raise RuntimeError(f"Obs CSV appears empty: {obs_csv_path}")
 
-    for c in ["PA_deg", "PA", "pa_deg", "position_angle", "PositionAngle"]:
-        if c in df.columns:
-            pa_col = c
-            break
+    # Use first row (this file is a single galaxy+QSO pairing)
+    r = df.iloc[0]
 
-    for c in ["Rvir_kpc", "R_vir", "Rvir", "R_vir_kpc"]:
-        if c in df.columns:
-            rvir_col = c
-            break
-
-    # Take first finite inc/PA from the table
-    inc_deg = np.nan
-    pa_deg = np.nan
-    rvir_kpc = np.nan
-
-    if inc_col is not None:
-        vals = pd.to_numeric(df[inc_col], errors="coerce")
-        vals = vals[np.isfinite(vals)]
-        if len(vals) > 0:
-            inc_deg = float(vals.iloc[0])
-
-    if pa_col is not None:
-        vals = pd.to_numeric(df[pa_col], errors="coerce")
-        vals = vals[np.isfinite(vals)]
-        if len(vals) > 0:
-            pa_deg = float(vals.iloc[0])
-
-    if rvir_col is not None:
-        vals = pd.to_numeric(df[rvir_col], errors="coerce")
-        vals = vals[np.isfinite(vals)]
-        if len(vals) > 0:
-            rvir_kpc = float(vals.iloc[0])
-
-    # sightline rho/phi columns
-    rho_col = None
-    phi_col = None
-    sidline_col = None
-
-    for c in ["rho_kpc", "rho", "impact_kpc", "Impact_kpc", "ImpactParameter_kpc"]:
-        if c in df.columns:
-            rho_col = c
-            break
-
-    for c in ["phi_deg", "phi", "azimuth_deg", "Azimuth_deg", "Phi"]:
-        if c in df.columns:
-            phi_col = c
-            break
-
-    for c in ["Sightline", "sightline", "QSO", "qso", "Target", "target", "Name", "name"]:
-        if c in df.columns:
-            sidline_col = c
-            break
-
-    if rho_col is None or phi_col is None:
+    # ---- rho / impact parameter ----
+    rho_candidates = ["rho_kpc", "rho", "impact_kpc", "impact_parameter_kpc", "impact"]
+    rho_col = next((c for c in rho_candidates if c in df.columns), None)
+    if rho_col is None:
         raise RuntimeError(
-            f"Obs CSV must contain rho and phi columns. Found rho_col={rho_col}, phi_col={phi_col}."
+            f"Obs CSV must contain an impact parameter column in kpc. "
+            f"Tried {rho_candidates}. Found columns={df.columns.tolist()}"
         )
+    rho_kpc = float(pd.to_numeric(r[rho_col], errors="coerce"))
+    if not np.isfinite(rho_kpc):
+        raise RuntimeError(f"Could not parse rho/impact from column '{rho_col}' (value={r[rho_col]!r}).")
 
-    # Build sightline list from rows that have finite rho/phi
-    rho_vals = pd.to_numeric(df[rho_col], errors="coerce")
-    phi_vals = pd.to_numeric(df[phi_col], errors="coerce")
+    # ---- phi / azimuth ----
+    # DIISC file uses theta_deg. Prefer that. If absent, default to 0.
+    phi_candidates = ["phi_deg", "phi", "azimuth_deg", "az_deg", "theta_deg", "theta"]
+    phi_col = next((c for c in phi_candidates if c in df.columns), None)
 
-    sightlines = []
-    for i in range(len(df)):
-        rho = safe_float(rho_vals.iloc[i], default=np.nan)
-        phi = safe_float(phi_vals.iloc[i], default=np.nan)
-        if not (np.isfinite(rho) and np.isfinite(phi)):
-            continue
-        sidstr = None
-        if sidline_col is not None:
-            sidstr = str(df[sidline_col].iloc[i])
-        if (sidstr is None) or (sidstr.strip() == ""):
-            sidstr = f"sightline_{len(sightlines)+1}"
-        sightlines.append({
-            "sightline_id": sidstr.replace(" ", "_"),
-            "rho_kpc": float(rho),
-            "phi_deg": float(phi),
-        })
+    if phi_col is None:
+        phi_deg = 0.0
+    else:
+        phi_deg = float(pd.to_numeric(r[phi_col], errors="coerce"))
+        if not np.isfinite(phi_deg):
+            phi_deg = 0.0
 
-    if len(sightlines) == 0:
-        raise RuntimeError("No valid sightlines found in obs CSV (finite rho and phi required).")
+    # Normalize to [0, 360)
+    phi_deg = float(phi_deg % 360.0)
 
-    # Defaults if missing
-    if not np.isfinite(inc_deg):
-        raise RuntimeError("Obs CSV must provide a usable inclination value (inc).")
-    if not np.isfinite(pa_deg):
-        pa_deg = 0.0
+    # ---- inclination ----
+    inc_candidates = ["inc_deg", "inc", "inclination_deg", "inclination"]
+    inc_col = next((c for c in inc_candidates if c in df.columns), None)
+    inc_deg = float(pd.to_numeric(r[inc_col], errors="coerce")) if inc_col else np.nan
 
-    return {
-        "inc_deg": float(inc_deg),
-        "pa_deg": float(pa_deg),
-        "rvir_kpc": float(rvir_kpc) if np.isfinite(rvir_kpc) else np.nan,
-        "sightlines": sightlines,
-        "obs_df_columns": list(df.columns),
+    # ---- virial radius ----
+    rvir_candidates = ["Rvir_kpc", "rvir_kpc", "Rvir", "rvir"]
+    rvir_col = next((c for c in rvir_candidates if c in df.columns), None)
+    Rvir_kpc = float(pd.to_numeric(r[rvir_col], errors="coerce")) if rvir_col else np.nan
+
+    # ---- optional metadata you may want later ----
+    pa_candidates = ["PA_deg", "pa_deg", "PA", "pa"]
+    pa_col = next((c for c in pa_candidates if c in df.columns), None)
+    PA_deg = float(pd.to_numeric(r[pa_col], errors="coerce")) if pa_col else np.nan
+
+    out = {
+        "rho_kpc": rho_kpc,
+        "phi_deg": phi_deg,          # from theta_deg (or 0.0 fallback)
+        "inc_deg": inc_deg,          # may be NaN; your pipeline can fallback to stellar-spin inc
+        "Rvir_kpc": Rvir_kpc,        # may be NaN; your pipeline can fallback to groupcat
+        "PA_deg": PA_deg,
+        "rho_col_used": rho_col,
+        "phi_col_used": phi_col if phi_col is not None else "(default 0.0)",
+        "inc_col_used": inc_col,
+        "Rvir_col_used": rvir_col,
     }
+    return out
+
 
 def load_top_matches(matches_csv: str, topn: int) -> pd.DataFrame:
     """
