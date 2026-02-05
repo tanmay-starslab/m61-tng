@@ -1,0 +1,2 @@
+galaxy_id,galaxy_name,ra_deg,dec_deg,distance_mpc,logMstar,logMHI,RHI_kpc,logSFR,b_over_a,PA_deg,inclination_deg,z_gal,logMhalo,Rvir_kpc,qso_name,qso_ra_deg,qso_dec_deg,z_qso,impact_kpc,rho_over_RHI,rho_over_Rvir,theta_deg
+J122154+042837,M61/NGC4303,185.479,4.4735,18.7,11.39,9.88,28.9,0.72,0.93,138,23,0.0052,12.7,457,J122138+043026,185.408,4.507,0.09,26,0.9,0.1,0

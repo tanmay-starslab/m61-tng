@@ -1,0 +1,2162 @@
+[
+  {
+    "Galaxy": "J122154+042837",
+    "SubhaloID": 143885,
+    "inc_deg": 23.0,
+    "phi_deg": 0.0,
+    "rho_kpc": 26.0,
+    "Rvir_kpc": 457.0,
+    "span": "1.5Rvir",
+    "sign": "minus",
+    "observer_frame_kpc": {
+      "x": 26.0,
+      "y": 0.0,
+      "z": -685.5
+    },
+    "native_centered_kpc": {
+      "x": -63.41091983946238,
+      "y": -94.02027518442578,
+      "z": 676.5541316844929
+    },
+    "absolute_ckpc_h": {
+      "X": 21015.811067900748,
+      "Y": 5233.32824371507,
+      "Z": 31531.942300053077
+    },
+    "figure_path": "./m61_matched_top20/J122154plus042837_sid143885/J122154plus042837_sid143885_obsOriented.png",
+    "orientation_source": "pca_v3"
+  },
+  {
+    "Galaxy": "J122154+042837",
+    "SubhaloID": 143885,
+    "inc_deg": 23.0,
+    "phi_deg": 0.0,
+    "rho_kpc": 26.0,
+    "Rvir_kpc": 457.0,
+    "span": "1.5Rvir",
+    "sign": "plus",
+    "observer_frame_kpc": {
+      "x": 26.0,
+      "y": 0.0,
+      "z": 685.5
+    },
+    "native_centered_kpc": {
+      "x": 94.7724395046877,
+      "y": 134.14403972814972,
+      "z": -666.0403976604895
+    },
+    "absolute_ckpc_h": {
+      "X": 21122.964475520475,
+      "Y": 5387.886750636849,
+      "Z": 30622.468765874786
+    },
+    "figure_path": "./m61_matched_top20/J122154plus042837_sid143885/J122154plus042837_sid143885_obsOriented.png",
+    "orientation_source": "pca_v3"
+  },
+  {
+    "Galaxy": "J122154+042837",
+    "SubhaloID": 143885,
+    "inc_deg": 23.0,
+    "phi_deg": 0.0,
+    "rho_kpc": 26.0,
+    "Rvir_kpc": 457.0,
+    "span": "2.0Rvir",
+    "sign": "minus",
+    "observer_frame_kpc": {
+      "x": 26.0,
+      "y": 0.0,
+      "z": -914.0
+    },
+    "native_centered_kpc": {
+      "x": -89.77481306348739,
+      "y": -132.04766100318835,
+      "z": 900.3198865753233
+    },
+    "absolute_ckpc_h": {
+      "X": 20997.952166630792,
+      "Y": 5207.5684925614405,
+      "Z": 31683.521222416122
+    },
+    "figure_path": "./m61_matched_top20/J122154plus042837_sid143885/J122154plus042837_sid143885_obsOriented.png",
+    "orientation_source": "pca_v3"
+  },
+  {
+    "Galaxy": "J122154+042837",
+    "SubhaloID": 143885,
+    "inc_deg": 23.0,
+    "phi_deg": 0.0,
+    "rho_kpc": 26.0,
+    "Rvir_kpc": 457.0,
+    "span": "2.0Rvir",
+    "sign": "plus",
+    "observer_frame_kpc": {
+      "x": 26.0,
+      "y": 0.0,
+      "z": 914.0
+    },
+    "native_centered_kpc": {
+      "x": 121.13633272871272,
+      "y": 172.1714255469123,
+      "z": -889.8061525513199
+    },
+    "absolute_ckpc_h": {
+      "X": 21140.82337679043,
+      "Y": 5413.646501790478,
+      "Z": 30470.889843511737
+    },
+    "figure_path": "./m61_matched_top20/J122154plus042837_sid143885/J122154plus042837_sid143885_obsOriented.png",
+    "orientation_source": "pca_v3"
+  },
+  {
+    "Galaxy": "J122154+042837",
+    "SubhaloID": 438148,
+    "inc_deg": 23.0,
+    "phi_deg": 0.0,
+    "rho_kpc": 26.0,
+    "Rvir_kpc": 457.0,
+    "span": "1.5Rvir",
+    "sign": "minus",
+    "observer_frame_kpc": {
+      "x": 26.0,
+      "y": 0.0,
+      "z": -685.5
+    },
+    "native_centered_kpc": {
+      "x": 288.85495245567523,
+      "y": -258.5616763824123,
+      "z": 565.946045085701
+    },
+    "absolute_ckpc_h": {
+      "X": 14375.143001043474,
+      "Y": 3991.322488387304,
+      "Z": 35325.641382191054
+    },
+    "figure_path": "./m61_matched_top20/J122154plus042837_sid438148/J122154plus042837_sid438148_obsOriented.png",
+    "orientation_source": "pca_v3"
+  },
+  {
+    "Galaxy": "J122154+042837",
+    "SubhaloID": 438148,
+    "inc_deg": 23.0,
+    "phi_deg": 0.0,
+    "rho_kpc": 26.0,
+    "Rvir_kpc": 457.0,
+    "span": "1.5Rvir",
+    "sign": "plus",
+    "observer_frame_kpc": {
+      "x": 26.0,
+      "y": 0.0,
+      "z": 685.5
+    },
+    "native_centered_kpc": {
+      "x": -334.7363526658918,
+      "y": 255.10432834457018,
+      "z": -541.7191208216685
+    },
+    "absolute_ckpc_h": {
+      "X": 13952.722250954124,
+      "Y": 4339.279839989362,
+      "Z": 34575.308998805405
+    },
+    "figure_path": "./m61_matched_top20/J122154plus042837_sid438148/J122154plus042837_sid438148_obsOriented.png",
+    "orientation_source": "pca_v3"
+  },
+  {
+    "Galaxy": "J122154+042837",
+    "SubhaloID": 438148,
+    "inc_deg": 23.0,
+    "phi_deg": 0.0,
+    "rho_kpc": 26.0,
+    "Rvir_kpc": 457.0,
+    "span": "2.0Rvir",
+    "sign": "minus",
+    "observer_frame_kpc": {
+      "x": 26.0,
+      "y": 0.0,
+      "z": -914.0
+    },
+    "native_centered_kpc": {
+      "x": 392.786836642603,
+      "y": -344.17267717024276,
+      "z": 750.5569060702627
+    },
+    "absolute_ckpc_h": {
+      "X": 14445.546459391699,
+      "Y": 3933.3295964536273,
+      "Z": 35450.696779421996
+    },
+    "figure_path": "./m61_matched_top20/J122154plus042837_sid438148/J122154plus042837_sid438148_obsOriented.png",
+    "orientation_source": "pca_v3"
+  },
+  {
+    "Galaxy": "J122154+042837",
+    "SubhaloID": 438148,
+    "inc_deg": 23.0,
+    "phi_deg": 0.0,
+    "rho_kpc": 26.0,
+    "Rvir_kpc": 457.0,
+    "span": "2.0Rvir",
+    "sign": "plus",
+    "observer_frame_kpc": {
+      "x": 26.0,
+      "y": 0.0,
+      "z": 914.0
+    },
+    "native_centered_kpc": {
+      "x": -438.66823685281963,
+      "y": 340.7153291324006,
+      "z": -726.3299818062302
+    },
+    "absolute_ckpc_h": {
+      "X": 13882.3187926059,
+      "Y": 4397.272731923038,
+      "Z": 34450.25360157446
+    },
+    "figure_path": "./m61_matched_top20/J122154plus042837_sid438148/J122154plus042837_sid438148_obsOriented.png",
+    "orientation_source": "pca_v3"
+  },
+  {
+    "Galaxy": "J122154+042837",
+    "SubhaloID": 375073,
+    "inc_deg": 23.0,
+    "phi_deg": 0.0,
+    "rho_kpc": 26.0,
+    "Rvir_kpc": 457.0,
+    "span": "1.5Rvir",
+    "sign": "minus",
+    "observer_frame_kpc": {
+      "x": 26.0,
+      "y": 0.0,
+      "z": -685.5
+    },
+    "native_centered_kpc": {
+      "x": 177.87875331942038,
+      "y": -649.7554798621827,
+      "z": -129.47283694502718
+    },
+    "absolute_ckpc_h": {
+      "X": 22678.307567498574,
+      "Y": 7247.882005128858,
+      "Z": 27645.23845962844
+    },
+    "figure_path": "./m61_matched_top20/J122154plus042837_sid375073/J122154plus042837_sid375073_obsOriented.png",
+    "orientation_source": "pca_v3"
+  },
+  {
+    "Galaxy": "J122154+042837",
+    "SubhaloID": 375073,
+    "inc_deg": 23.0,
+    "phi_deg": 0.0,
+    "rho_kpc": 26.0,
+    "Rvir_kpc": 457.0,
+    "span": "1.5Rvir",
+    "sign": "plus",
+    "observer_frame_kpc": {
+      "x": 26.0,
+      "y": 0.0,
+      "z": 685.5
+    },
+    "native_centered_kpc": {
+      "x": -129.0891702640697,
+      "y": 657.8282881599613,
+      "z": 145.54785954135212
+    },
+    "absolute_ckpc_h": {
+      "X": 22470.367496063118,
+      "Y": 8133.639249587058,
+      "Z": 27831.537479428313
+    },
+    "figure_path": "./m61_matched_top20/J122154plus042837_sid375073/J122154plus042837_sid375073_obsOriented.png",
+    "orientation_source": "pca_v3"
+  },
+  {
+    "Galaxy": "J122154+042837",
+    "SubhaloID": 375073,
+    "inc_deg": 23.0,
+    "phi_deg": 0.0,
+    "rho_kpc": 26.0,
+    "Rvir_kpc": 457.0,
+    "span": "2.0Rvir",
+    "sign": "minus",
+    "observer_frame_kpc": {
+      "x": 26.0,
+      "y": 0.0,
+      "z": -914.0
+    },
+    "native_centered_kpc": {
+      "x": 229.04007391666872,
+      "y": -867.6861078658734,
+      "z": -175.30961969275708
+    },
+    "absolute_ckpc_h": {
+      "X": 22712.96424607115,
+      "Y": 7100.255797719157,
+      "Z": 27614.188622995127
+    },
+    "figure_path": "./m61_matched_top20/J122154plus042837_sid375073/J122154plus042837_sid375073_obsOriented.png",
+    "orientation_source": "pca_v3"
+  },
+  {
+    "Galaxy": "J122154+042837",
+    "SubhaloID": 375073,
+    "inc_deg": 23.0,
+    "phi_deg": 0.0,
+    "rho_kpc": 26.0,
+    "Rvir_kpc": 457.0,
+    "span": "2.0Rvir",
+    "sign": "plus",
+    "observer_frame_kpc": {
+      "x": 26.0,
+      "y": 0.0,
+      "z": 914.0
+    },
+    "native_centered_kpc": {
+      "x": -180.25049086131804,
+      "y": 875.7589161636519,
+      "z": 191.38464228908202
+    },
+    "absolute_ckpc_h": {
+      "X": 22435.710817490544,
+      "Y": 8281.265456996758,
+      "Z": 27862.587316061625
+    },
+    "figure_path": "./m61_matched_top20/J122154plus042837_sid375073/J122154plus042837_sid375073_obsOriented.png",
+    "orientation_source": "pca_v3"
+  },
+  {
+    "Galaxy": "J122154+042837",
+    "SubhaloID": 143884,
+    "inc_deg": 23.0,
+    "phi_deg": 0.0,
+    "rho_kpc": 26.0,
+    "Rvir_kpc": 457.0,
+    "span": "1.5Rvir",
+    "sign": "minus",
+    "observer_frame_kpc": {
+      "x": 26.0,
+      "y": 0.0,
+      "z": -685.5
+    },
+    "native_centered_kpc": {
+      "x": -91.06695062921527,
+      "y": 38.498157894270015,
+      "z": -678.8305770528049
+    },
+    "absolute_ckpc_h": {
+      "X": 21087.00070076877,
+      "Y": 5534.415077938828,
+      "Z": 30758.82813585443
+    },
+    "figure_path": "./m61_matched_top20/J122154plus042837_sid143884/J122154plus042837_sid143884_obsOriented.png",
+    "orientation_source": "pca_v3"
+  },
+  {
+    "Galaxy": "J122154+042837",
+    "SubhaloID": 143884,
+    "inc_deg": 23.0,
+    "phi_deg": 0.0,
+    "rho_kpc": 26.0,
+    "Rvir_kpc": 457.0,
+    "span": "1.5Rvir",
+    "sign": "plus",
+    "observer_frame_kpc": {
+      "x": 26.0,
+      "y": 0.0,
+      "z": 685.5
+    },
+    "native_centered_kpc": {
+      "x": 142.28521119553687,
+      "y": -36.45247843789285,
+      "z": 670.0838645205363
+    },
+    "absolute_ckpc_h": {
+      "X": 21245.073455188856,
+      "Y": 5483.643516887421,
+      "Z": 31672.582778576212
+    },
+    "figure_path": "./m61_matched_top20/J122154plus042837_sid143884/J122154plus042837_sid143884_obsOriented.png",
+    "orientation_source": "pca_v3"
+  },
+  {
+    "Galaxy": "J122154+042837",
+    "SubhaloID": 143884,
+    "inc_deg": 23.0,
+    "phi_deg": 0.0,
+    "rho_kpc": 26.0,
+    "Rvir_kpc": 457.0,
+    "span": "2.0Rvir",
+    "sign": "minus",
+    "observer_frame_kpc": {
+      "x": 26.0,
+      "y": 0.0,
+      "z": -914.0
+    },
+    "native_centered_kpc": {
+      "x": -129.9589776000073,
+      "y": 50.98993061629716,
+      "z": -903.6496506483617
+    },
+    "absolute_ckpc_h": {
+      "X": 21060.655241698754,
+      "Y": 5542.877004780729,
+      "Z": 30606.5356954008
+    },
+    "figure_path": "./m61_matched_top20/J122154plus042837_sid143884/J122154plus042837_sid143884_obsOriented.png",
+    "orientation_source": "pca_v3"
+  },
+  {
+    "Galaxy": "J122154+042837",
+    "SubhaloID": 143884,
+    "inc_deg": 23.0,
+    "phi_deg": 0.0,
+    "rho_kpc": 26.0,
+    "Rvir_kpc": 457.0,
+    "span": "2.0Rvir",
+    "sign": "plus",
+    "observer_frame_kpc": {
+      "x": 26.0,
+      "y": 0.0,
+      "z": 914.0
+    },
+    "native_centered_kpc": {
+      "x": 181.1772381663289,
+      "y": -48.94425115991999,
+      "z": 894.9029381160932
+    },
+    "absolute_ckpc_h": {
+      "X": 21271.418914258873,
+      "Y": 5475.18159004552,
+      "Z": 31824.87521902984
+    },
+    "figure_path": "./m61_matched_top20/J122154plus042837_sid143884/J122154plus042837_sid143884_obsOriented.png",
+    "orientation_source": "pca_v3"
+  },
+  {
+    "Galaxy": "J122154+042837",
+    "SubhaloID": 143886,
+    "inc_deg": 23.0,
+    "phi_deg": 0.0,
+    "rho_kpc": 26.0,
+    "Rvir_kpc": 457.0,
+    "span": "1.5Rvir",
+    "sign": "minus",
+    "observer_frame_kpc": {
+      "x": 26.0,
+      "y": 0.0,
+      "z": -685.5
+    },
+    "native_centered_kpc": {
+      "x": -462.6222316088222,
+      "y": 443.59175542716105,
+      "z": -244.52663523289863
+    },
+    "absolute_ckpc_h": {
+      "X": 20657.117747183183,
+      "Y": 5432.338664501359,
+      "Z": 30886.023672918236
+    },
+    "figure_path": "./m61_matched_top20/J122154plus042837_sid143886/J122154plus042837_sid143886_obsOriented.png",
+    "orientation_source": "pca_v3"
+  },
+  {
+    "Galaxy": "J122154+042837",
+    "SubhaloID": 143886,
+    "inc_deg": 23.0,
+    "phi_deg": 0.0,
+    "rho_kpc": 26.0,
+    "Rvir_kpc": 457.0,
+    "span": "1.5Rvir",
+    "sign": "plus",
+    "observer_frame_kpc": {
+      "x": 26.0,
+      "y": 0.0,
+      "z": 685.5
+    },
+    "native_centered_kpc": {
+      "x": 498.1942165964067,
+      "y": -419.6724319324854,
+      "z": 215.0902657624609
+    },
+    "absolute_ckpc_h": {
+      "X": 21307.974809197407,
+      "Y": 4847.563503983934,
+      "Z": 31197.368161652492
+    },
+    "figure_path": "./m61_matched_top20/J122154plus042837_sid143886/J122154plus042837_sid143886_obsOriented.png",
+    "orientation_source": "pca_v3"
+  },
+  {
+    "Galaxy": "J122154+042837",
+    "SubhaloID": 143886,
+    "inc_deg": 23.0,
+    "phi_deg": 0.0,
+    "rho_kpc": 26.0,
+    "Rvir_kpc": 457.0,
+    "span": "2.0Rvir",
+    "sign": "minus",
+    "observer_frame_kpc": {
+      "x": 26.0,
+      "y": 0.0,
+      "z": -914.0
+    },
+    "native_centered_kpc": {
+      "x": -622.7583063096937,
+      "y": 587.4691199871021,
+      "z": -321.12945206545857
+    },
+    "absolute_ckpc_h": {
+      "X": 20548.641570180815,
+      "Y": 5529.801191254263,
+      "Z": 30834.13292479586
+    },
+    "figure_path": "./m61_matched_top20/J122154plus042837_sid143886/J122154plus042837_sid143886_obsOriented.png",
+    "orientation_source": "pca_v3"
+  },
+  {
+    "Galaxy": "J122154+042837",
+    "SubhaloID": 143886,
+    "inc_deg": 23.0,
+    "phi_deg": 0.0,
+    "rho_kpc": 26.0,
+    "Rvir_kpc": 457.0,
+    "span": "2.0Rvir",
+    "sign": "plus",
+    "observer_frame_kpc": {
+      "x": 26.0,
+      "y": 0.0,
+      "z": 914.0
+    },
+    "native_centered_kpc": {
+      "x": 658.3302912972782,
+      "y": -563.5497964924265,
+      "z": 291.6930825950208
+    },
+    "absolute_ckpc_h": {
+      "X": 21416.450986199776,
+      "Y": 4750.10097723103,
+      "Z": 31249.258909774868
+    },
+    "figure_path": "./m61_matched_top20/J122154plus042837_sid143886/J122154plus042837_sid143886_obsOriented.png",
+    "orientation_source": "pca_v3"
+  },
+  {
+    "Galaxy": "J122154+042837",
+    "SubhaloID": 348901,
+    "inc_deg": 23.0,
+    "phi_deg": 0.0,
+    "rho_kpc": 26.0,
+    "Rvir_kpc": 457.0,
+    "span": "1.5Rvir",
+    "sign": "minus",
+    "observer_frame_kpc": {
+      "x": 26.0,
+      "y": 0.0,
+      "z": -685.5
+    },
+    "native_centered_kpc": {
+      "x": -74.64228936498677,
+      "y": -540.87136605939,
+      "z": -415.29862029075304
+    },
+    "absolute_ckpc_h": {
+      "X": 29190.783016309157,
+      "Y": 20926.79342413137,
+      "Z": 46.29091139238767
+    },
+    "figure_path": "./m61_matched_top20/J122154plus042837_sid348901/J122154plus042837_sid348901_obsOriented.png",
+    "orientation_source": "pca_v3"
+  },
+  {
+    "Galaxy": "J122154+042837",
+    "SubhaloID": 348901,
+    "inc_deg": 23.0,
+    "phi_deg": 0.0,
+    "rho_kpc": 26.0,
+    "Rvir_kpc": 457.0,
+    "span": "1.5Rvir",
+    "sign": "plus",
+    "observer_frame_kpc": {
+      "x": 26.0,
+      "y": 0.0,
+      "z": 685.5
+    },
+    "native_centered_kpc": {
+      "x": 125.74914024605678,
+      "y": 538.4484065038138,
+      "z": 406.0131983826158
+    },
+    "absolute_ckpc_h": {
+      "X": 29326.528170727677,
+      "Y": 21657.924638065684,
+      "Z": 602.6475373617277
+    },
+    "figure_path": "./m61_matched_top20/J122154plus042837_sid348901/J122154plus042837_sid348901_obsOriented.png",
+    "orientation_source": "pca_v3"
+  },
+  {
+    "Galaxy": "J122154+042837",
+    "SubhaloID": 348901,
+    "inc_deg": 23.0,
+    "phi_deg": 0.0,
+    "rho_kpc": 26.0,
+    "Rvir_kpc": 457.0,
+    "span": "2.0Rvir",
+    "sign": "minus",
+    "observer_frame_kpc": {
+      "x": 26.0,
+      "y": 0.0,
+      "z": -914.0
+    },
+    "native_centered_kpc": {
+      "x": -108.04086096682737,
+      "y": -720.757994819924,
+      "z": -552.1839234029811
+    },
+    "absolute_ckpc_h": {
+      "X": 29168.158823906073,
+      "Y": 20804.938221808985,
+      "Z": -46.43519293583569
+    },
+    "figure_path": "./m61_matched_top20/J122154plus042837_sid348901/J122154plus042837_sid348901_obsOriented.png",
+    "orientation_source": "pca_v3"
+  },
+  {
+    "Galaxy": "J122154+042837",
+    "SubhaloID": 348901,
+    "inc_deg": 23.0,
+    "phi_deg": 0.0,
+    "rho_kpc": 26.0,
+    "Rvir_kpc": 457.0,
+    "span": "2.0Rvir",
+    "sign": "plus",
+    "observer_frame_kpc": {
+      "x": 26.0,
+      "y": 0.0,
+      "z": 914.0
+    },
+    "native_centered_kpc": {
+      "x": 159.14771184789737,
+      "y": 718.3350352643478,
+      "z": 542.8985014948439
+    },
+    "absolute_ckpc_h": {
+      "X": 29349.152363130765,
+      "Y": 21779.77984038807,
+      "Z": 695.373641689951
+    },
+    "figure_path": "./m61_matched_top20/J122154plus042837_sid348901/J122154plus042837_sid348901_obsOriented.png",
+    "orientation_source": "pca_v3"
+  },
+  {
+    "Galaxy": "J122154+042837",
+    "SubhaloID": 398784,
+    "inc_deg": 23.0,
+    "phi_deg": 0.0,
+    "rho_kpc": 26.0,
+    "Rvir_kpc": 457.0,
+    "span": "1.5Rvir",
+    "sign": "minus",
+    "observer_frame_kpc": {
+      "x": 26.0,
+      "y": 0.0,
+      "z": -685.5
+    },
+    "native_centered_kpc": {
+      "x": -12.606532771458582,
+      "y": 502.6806816611454,
+      "z": -466.6256075443872
+    },
+    "absolute_ckpc_h": {
+      "X": 14422.583381575614,
+      "Y": 8543.29128438226,
+      "Z": 518.5347055392758
+    },
+    "figure_path": "./m61_matched_top20/J122154plus042837_sid398784/J122154plus042837_sid398784_obsOriented.png",
+    "orientation_source": "pca_v3"
+  },
+  {
+    "Galaxy": "J122154+042837",
+    "SubhaloID": 398784,
+    "inc_deg": 23.0,
+    "phi_deg": 0.0,
+    "rho_kpc": 26.0,
+    "Rvir_kpc": 457.0,
+    "span": "1.5Rvir",
+    "sign": "plus",
+    "observer_frame_kpc": {
+      "x": 26.0,
+      "y": 0.0,
+      "z": 685.5
+    },
+    "native_centered_kpc": {
+      "x": 64.5204169295383,
+      "y": -500.9619422305475,
+      "z": 464.1772271835794
+    },
+    "absolute_ckpc_h": {
+      "X": 14474.829177303069,
+      "Y": 7863.4237709580275,
+      "Z": 1149.0605457840004
+    },
+    "figure_path": "./m61_matched_top20/J122154plus042837_sid398784/J122154plus042837_sid398784_obsOriented.png",
+    "orientation_source": "pca_v3"
+  },
+  {
+    "Galaxy": "J122154+042837",
+    "SubhaloID": 398784,
+    "inc_deg": 23.0,
+    "phi_deg": 0.0,
+    "rho_kpc": 26.0,
+    "Rvir_kpc": 457.0,
+    "span": "2.0Rvir",
+    "sign": "minus",
+    "observer_frame_kpc": {
+      "x": 26.0,
+      "y": 0.0,
+      "z": -914.0
+    },
+    "native_centered_kpc": {
+      "x": -25.461024388291396,
+      "y": 669.9544523097609,
+      "z": -621.7594133323817
+    },
+    "absolute_ckpc_h": {
+      "X": 14413.875748954371,
+      "Y": 8656.602536619632,
+      "Z": 413.4470654984884
+    },
+    "figure_path": "./m61_matched_top20/J122154plus042837_sid398784/J122154plus042837_sid398784_obsOriented.png",
+    "orientation_source": "pca_v3"
+  },
+  {
+    "Galaxy": "J122154+042837",
+    "SubhaloID": 398784,
+    "inc_deg": 23.0,
+    "phi_deg": 0.0,
+    "rho_kpc": 26.0,
+    "Rvir_kpc": 457.0,
+    "span": "2.0Rvir",
+    "sign": "plus",
+    "observer_frame_kpc": {
+      "x": 26.0,
+      "y": 0.0,
+      "z": 914.0
+    },
+    "native_centered_kpc": {
+      "x": 77.3749085463711,
+      "y": -668.235712879163,
+      "z": 619.3110329715738
+    },
+    "absolute_ckpc_h": {
+      "X": 14483.536809924311,
+      "Y": 7750.112518720655,
+      "Z": 1254.1481858247878
+    },
+    "figure_path": "./m61_matched_top20/J122154plus042837_sid398784/J122154plus042837_sid398784_obsOriented.png",
+    "orientation_source": "pca_v3"
+  },
+  {
+    "Galaxy": "J122154+042837",
+    "SubhaloID": 360923,
+    "inc_deg": 23.0,
+    "phi_deg": 0.0,
+    "rho_kpc": 26.0,
+    "Rvir_kpc": 457.0,
+    "span": "1.5Rvir",
+    "sign": "minus",
+    "observer_frame_kpc": {
+      "x": 26.0,
+      "y": 0.0,
+      "z": -685.5
+    },
+    "native_centered_kpc": {
+      "x": 112.6855763386395,
+      "y": -382.28449845411274,
+      "z": -558.342881325549
+    },
+    "absolute_ckpc_h": {
+      "X": 34267.325396911794,
+      "Y": 14267.321730747184,
+      "Z": 10912.619352502574
+    },
+    "figure_path": "./m61_matched_top20/J122154plus042837_sid360923/J122154plus042837_sid360923_obsOriented.png",
+    "orientation_source": "pca_v3"
+  },
+  {
+    "Galaxy": "J122154+042837",
+    "SubhaloID": 360923,
+    "inc_deg": 23.0,
+    "phi_deg": 0.0,
+    "rho_kpc": 26.0,
+    "Rvir_kpc": 457.0,
+    "span": "1.5Rvir",
+    "sign": "plus",
+    "observer_frame_kpc": {
+      "x": 26.0,
+      "y": 0.0,
+      "z": 685.5
+    },
+    "native_centered_kpc": {
+      "x": -61.23011191356073,
+      "y": 383.0033692685283,
+      "z": 565.814052957337
+    },
+    "absolute_ckpc_h": {
+      "X": 34149.51490968975,
+      "Y": 14785.7277323425,
+      "Z": 11674.1232597858
+    },
+    "figure_path": "./m61_matched_top20/J122154plus042837_sid360923/J122154plus042837_sid360923_obsOriented.png",
+    "orientation_source": "pca_v3"
+  },
+  {
+    "Galaxy": "J122154+042837",
+    "SubhaloID": 360923,
+    "inc_deg": 23.0,
+    "phi_deg": 0.0,
+    "rho_kpc": 26.0,
+    "Rvir_kpc": 457.0,
+    "span": "2.0Rvir",
+    "sign": "minus",
+    "observer_frame_kpc": {
+      "x": 26.0,
+      "y": 0.0,
+      "z": -914.0
+    },
+    "native_centered_kpc": {
+      "x": 141.67152438067288,
+      "y": -509.83247640788625,
+      "z": -745.7023703726967
+    },
+    "absolute_ckpc_h": {
+      "X": 34286.96047811547,
+      "Y": 14180.920730481297,
+      "Z": 10785.702034622036
+    },
+    "figure_path": "./m61_matched_top20/J122154plus042837_sid360923/J122154plus042837_sid360923_obsOriented.png",
+    "orientation_source": "pca_v3"
+  },
+  {
+    "Galaxy": "J122154+042837",
+    "SubhaloID": 360923,
+    "inc_deg": 23.0,
+    "phi_deg": 0.0,
+    "rho_kpc": 26.0,
+    "Rvir_kpc": 457.0,
+    "span": "2.0Rvir",
+    "sign": "plus",
+    "observer_frame_kpc": {
+      "x": 26.0,
+      "y": 0.0,
+      "z": 914.0
+    },
+    "native_centered_kpc": {
+      "x": -90.2160599555941,
+      "y": 510.5513472223018,
+      "z": 753.1735420044847
+    },
+    "absolute_ckpc_h": {
+      "X": 34129.87982848608,
+      "Y": 14872.128732608388,
+      "Z": 11801.040577666337
+    },
+    "figure_path": "./m61_matched_top20/J122154plus042837_sid360923/J122154plus042837_sid360923_obsOriented.png",
+    "orientation_source": "pca_v3"
+  },
+  {
+    "Galaxy": "J122154+042837",
+    "SubhaloID": 167395,
+    "inc_deg": 23.0,
+    "phi_deg": 0.0,
+    "rho_kpc": 26.0,
+    "Rvir_kpc": 457.0,
+    "span": "1.5Rvir",
+    "sign": "minus",
+    "observer_frame_kpc": {
+      "x": 26.0,
+      "y": 0.0,
+      "z": -685.5
+    },
+    "native_centered_kpc": {
+      "x": -424.34979765875227,
+      "y": -74.71568519271896,
+      "z": -533.7893457284049
+    },
+    "absolute_ckpc_h": {
+      "X": 16865.91263456596,
+      "Y": 200.39328637877247,
+      "Z": 29072.252894078578
+    },
+    "figure_path": "./m61_matched_top20/J122154plus042837_sid167395/J122154plus042837_sid167395_obsOriented.png",
+    "orientation_source": "pca_v3"
+  },
+  {
+    "Galaxy": "J122154+042837",
+    "SubhaloID": 167395,
+    "inc_deg": 23.0,
+    "phi_deg": 0.0,
+    "rho_kpc": 26.0,
+    "Rvir_kpc": 457.0,
+    "span": "1.5Rvir",
+    "sign": "plus",
+    "observer_frame_kpc": {
+      "x": 26.0,
+      "y": 0.0,
+      "z": 685.5
+    },
+    "native_centered_kpc": {
+      "x": 463.1409264928631,
+      "y": 80.38025071645208,
+      "z": 499.62560733222307
+    },
+    "absolute_ckpc_h": {
+      "X": 17467.098851106264,
+      "Y": 305.45527336364495,
+      "Z": 29772.28818328185
+    },
+    "figure_path": "./m61_matched_top20/J122154plus042837_sid167395/J122154plus042837_sid167395_obsOriented.png",
+    "orientation_source": "pca_v3"
+  },
+  {
+    "Galaxy": "J122154+042837",
+    "SubhaloID": 167395,
+    "inc_deg": 23.0,
+    "phi_deg": 0.0,
+    "rho_kpc": 26.0,
+    "Rvir_kpc": 457.0,
+    "span": "2.0Rvir",
+    "sign": "minus",
+    "observer_frame_kpc": {
+      "x": 26.0,
+      "y": 0.0,
+      "z": -914.0
+    },
+    "native_centered_kpc": {
+      "x": -572.2649183506882,
+      "y": -100.56500784424748,
+      "z": -706.0251712385095
+    },
+    "absolute_ckpc_h": {
+      "X": 16765.714931809245,
+      "Y": 182.8829552146271,
+      "Z": 28955.580345878032
+    },
+    "figure_path": "./m61_matched_top20/J122154plus042837_sid167395/J122154plus042837_sid167395_obsOriented.png",
+    "orientation_source": "pca_v3"
+  },
+  {
+    "Galaxy": "J122154+042837",
+    "SubhaloID": 167395,
+    "inc_deg": 23.0,
+    "phi_deg": 0.0,
+    "rho_kpc": 26.0,
+    "Rvir_kpc": 457.0,
+    "span": "2.0Rvir",
+    "sign": "plus",
+    "observer_frame_kpc": {
+      "x": 26.0,
+      "y": 0.0,
+      "z": 914.0
+    },
+    "native_centered_kpc": {
+      "x": 611.056047184799,
+      "y": 106.22957336798059,
+      "z": 671.8614328423278
+    },
+    "absolute_ckpc_h": {
+      "X": 17567.296553862983,
+      "Y": 322.96560452779033,
+      "Z": 29888.96073148239
+    },
+    "figure_path": "./m61_matched_top20/J122154plus042837_sid167395/J122154plus042837_sid167395_obsOriented.png",
+    "orientation_source": "pca_v3"
+  },
+  {
+    "Galaxy": "J122154+042837",
+    "SubhaloID": 388544,
+    "inc_deg": 23.0,
+    "phi_deg": 0.0,
+    "rho_kpc": 26.0,
+    "Rvir_kpc": 457.0,
+    "span": "1.5Rvir",
+    "sign": "minus",
+    "observer_frame_kpc": {
+      "x": 26.0,
+      "y": 0.0,
+      "z": -685.5
+    },
+    "native_centered_kpc": {
+      "x": -265.58084791249905,
+      "y": 602.9046591206686,
+      "z": -191.2041715880395
+    },
+    "absolute_ckpc_h": {
+      "X": 8019.354322686573,
+      "Y": 28626.86074108834,
+      "Z": 18916.923606666263
+    },
+    "figure_path": "./m61_matched_top20/J122154plus042837_sid388544/J122154plus042837_sid388544_obsOriented.png",
+    "orientation_source": "pca_v3"
+  },
+  {
+    "Galaxy": "J122154+042837",
+    "SubhaloID": 388544,
+    "inc_deg": 23.0,
+    "phi_deg": 0.0,
+    "rho_kpc": 26.0,
+    "Rvir_kpc": 457.0,
+    "span": "1.5Rvir",
+    "sign": "plus",
+    "observer_frame_kpc": {
+      "x": 26.0,
+      "y": 0.0,
+      "z": 685.5
+    },
+    "native_centered_kpc": {
+      "x": 311.76088344506445,
+      "y": -585.5244401183434,
+      "z": 174.7928247316048
+    },
+    "absolute_ckpc_h": {
+      "X": 8410.445611508187,
+      "Y": 27821.818869263836,
+      "Z": 19164.849971973188
+    },
+    "figure_path": "./m61_matched_top20/J122154plus042837_sid388544/J122154plus042837_sid388544_obsOriented.png",
+    "orientation_source": "pca_v3"
+  },
+  {
+    "Galaxy": "J122154+042837",
+    "SubhaloID": 388544,
+    "inc_deg": 23.0,
+    "phi_deg": 0.0,
+    "rho_kpc": 26.0,
+    "Rvir_kpc": 457.0,
+    "span": "2.0Rvir",
+    "sign": "minus",
+    "observer_frame_kpc": {
+      "x": 26.0,
+      "y": 0.0,
+      "z": -914.0
+    },
+    "native_centered_kpc": {
+      "x": -361.80446980542627,
+      "y": 800.9761756605039,
+      "z": -252.20367097464685
+    },
+    "absolute_ckpc_h": {
+      "X": 7954.172441216304,
+      "Y": 28761.034386392424,
+      "Z": 18875.602545781774
+    },
+    "figure_path": "./m61_matched_top20/J122154plus042837_sid388544/J122154plus042837_sid388544_obsOriented.png",
+    "orientation_source": "pca_v3"
+  },
+  {
+    "Galaxy": "J122154+042837",
+    "SubhaloID": 388544,
+    "inc_deg": 23.0,
+    "phi_deg": 0.0,
+    "rho_kpc": 26.0,
+    "Rvir_kpc": 457.0,
+    "span": "2.0Rvir",
+    "sign": "plus",
+    "observer_frame_kpc": {
+      "x": 26.0,
+      "y": 0.0,
+      "z": 914.0
+    },
+    "native_centered_kpc": {
+      "x": 407.9845053379917,
+      "y": -783.5959566581787,
+      "z": 235.7923241182122
+    },
+    "absolute_ckpc_h": {
+      "X": 8475.627492978456,
+      "Y": 27687.64522395975,
+      "Z": 19206.171032857677
+    },
+    "figure_path": "./m61_matched_top20/J122154plus042837_sid388544/J122154plus042837_sid388544_obsOriented.png",
+    "orientation_source": "pca_v3"
+  },
+  {
+    "Galaxy": "J122154+042837",
+    "SubhaloID": 352426,
+    "inc_deg": 23.0,
+    "phi_deg": 0.0,
+    "rho_kpc": 26.0,
+    "Rvir_kpc": 457.0,
+    "span": "1.5Rvir",
+    "sign": "minus",
+    "observer_frame_kpc": {
+      "x": 26.0,
+      "y": 0.0,
+      "z": -685.5
+    },
+    "native_centered_kpc": {
+      "x": 392.4894306912872,
+      "y": 463.92323227303564,
+      "z": -318.29786576879263
+    },
+    "absolute_ckpc_h": {
+      "X": 1873.753932147153,
+      "Y": 4721.155152229254,
+      "Z": 34110.22486947822
+    },
+    "figure_path": "./m61_matched_top20/J122154plus042837_sid352426/J122154plus042837_sid352426_obsOriented.png",
+    "orientation_source": "pca_v3"
+  },
+  {
+    "Galaxy": "J122154+042837",
+    "SubhaloID": 352426,
+    "inc_deg": 23.0,
+    "phi_deg": 0.0,
+    "rho_kpc": 26.0,
+    "Rvir_kpc": 457.0,
+    "span": "1.5Rvir",
+    "sign": "plus",
+    "observer_frame_kpc": {
+      "x": 26.0,
+      "y": 0.0,
+      "z": 685.5
+    },
+    "native_centered_kpc": {
+      "x": -349.3811527402288,
+      "y": -481.67733307169067,
+      "z": 341.32976271466947
+    },
+    "absolute_ckpc_h": {
+      "X": 1371.210798930644,
+      "Y": 4080.6053292647366,
+      "Z": 34557.05662501292
+    },
+    "figure_path": "./m61_matched_top20/J122154plus042837_sid352426/J122154plus042837_sid352426_obsOriented.png",
+    "orientation_source": "pca_v3"
+  },
+  {
+    "Galaxy": "J122154+042837",
+    "SubhaloID": 352426,
+    "inc_deg": 23.0,
+    "phi_deg": 0.0,
+    "rho_kpc": 26.0,
+    "Rvir_kpc": 457.0,
+    "span": "2.0Rvir",
+    "sign": "minus",
+    "observer_frame_kpc": {
+      "x": 26.0,
+      "y": 0.0,
+      "z": -914.0
+    },
+    "native_centered_kpc": {
+      "x": 516.1345279298732,
+      "y": 621.5233264971567,
+      "z": -428.23580384936963
+    },
+    "absolute_ckpc_h": {
+      "X": 1957.511121016571,
+      "Y": 4827.913456056674,
+      "Z": 34035.752910222436
+    },
+    "figure_path": "./m61_matched_top20/J122154plus042837_sid352426/J122154plus042837_sid352426_obsOriented.png",
+    "orientation_source": "pca_v3"
+  },
+  {
+    "Galaxy": "J122154+042837",
+    "SubhaloID": 352426,
+    "inc_deg": 23.0,
+    "phi_deg": 0.0,
+    "rho_kpc": 26.0,
+    "Rvir_kpc": 457.0,
+    "span": "2.0Rvir",
+    "sign": "plus",
+    "observer_frame_kpc": {
+      "x": 26.0,
+      "y": 0.0,
+      "z": 914.0
+    },
+    "native_centered_kpc": {
+      "x": -473.0262499788148,
+      "y": -639.2774272958118,
+      "z": 451.26770079524647
+    },
+    "absolute_ckpc_h": {
+      "X": 1287.4536100612258,
+      "Y": 3973.847025437317,
+      "Z": 34631.5285842687
+    },
+    "figure_path": "./m61_matched_top20/J122154plus042837_sid352426/J122154plus042837_sid352426_obsOriented.png",
+    "orientation_source": "pca_v3"
+  },
+  {
+    "Galaxy": "J122154+042837",
+    "SubhaloID": 432106,
+    "inc_deg": 23.0,
+    "phi_deg": 0.0,
+    "rho_kpc": 26.0,
+    "Rvir_kpc": 457.0,
+    "span": "1.5Rvir",
+    "sign": "minus",
+    "observer_frame_kpc": {
+      "x": 26.0,
+      "y": 0.0,
+      "z": -685.5
+    },
+    "native_centered_kpc": {
+      "x": -526.3446843000645,
+      "y": 77.13696254989821,
+      "z": -433.1251693421212
+    },
+    "absolute_ckpc_h": {
+      "X": 7536.286142105137,
+      "Y": 8639.6842190563,
+      "Z": 1923.1034516938971
+    },
+    "figure_path": "./m61_matched_top20/J122154plus042837_sid432106/J122154plus042837_sid432106_obsOriented.png",
+    "orientation_source": "pca_v3"
+  },
+  {
+    "Galaxy": "J122154+042837",
+    "SubhaloID": 432106,
+    "inc_deg": 23.0,
+    "phi_deg": 0.0,
+    "rho_kpc": 26.0,
+    "Rvir_kpc": 457.0,
+    "span": "1.5Rvir",
+    "sign": "plus",
+    "observer_frame_kpc": {
+      "x": 26.0,
+      "y": 0.0,
+      "z": 685.5
+    },
+    "native_centered_kpc": {
+      "x": 557.959623452596,
+      "y": -64.40487201473948,
+      "z": 393.85190244227886
+    },
+    "absolute_ckpc_h": {
+      "X": 8270.793880176789,
+      "Y": 8543.803780322216,
+      "Z": 2483.2977201206495
+    },
+    "figure_path": "./m61_matched_top20/J122154plus042837_sid432106/J122154plus042837_sid432106_obsOriented.png",
+    "orientation_source": "pca_v3"
+  },
+  {
+    "Galaxy": "J122154+042837",
+    "SubhaloID": 432106,
+    "inc_deg": 23.0,
+    "phi_deg": 0.0,
+    "rho_kpc": 26.0,
+    "Rvir_kpc": 457.0,
+    "span": "2.0Rvir",
+    "sign": "minus",
+    "observer_frame_kpc": {
+      "x": 26.0,
+      "y": 0.0,
+      "z": -914.0
+    },
+    "native_centered_kpc": {
+      "x": -707.0620689255079,
+      "y": 100.72726831067115,
+      "z": -570.9546813061878
+    },
+    "absolute_ckpc_h": {
+      "X": 7413.868185759861,
+      "Y": 8655.664292178648,
+      "Z": 1829.7377402894383
+    },
+    "figure_path": "./m61_matched_top20/J122154plus042837_sid432106/J122154plus042837_sid432106_obsOriented.png",
+    "orientation_source": "pca_v3"
+  },
+  {
+    "Galaxy": "J122154+042837",
+    "SubhaloID": 432106,
+    "inc_deg": 23.0,
+    "phi_deg": 0.0,
+    "rho_kpc": 26.0,
+    "Rvir_kpc": 457.0,
+    "span": "2.0Rvir",
+    "sign": "plus",
+    "observer_frame_kpc": {
+      "x": 26.0,
+      "y": 0.0,
+      "z": 914.0
+    },
+    "native_centered_kpc": {
+      "x": 738.6770080780395,
+      "y": -87.99517777551242,
+      "z": 531.6814144063455
+    },
+    "absolute_ckpc_h": {
+      "X": 8393.211836522063,
+      "Y": 8527.823707199868,
+      "Z": 2576.6634315251085
+    },
+    "figure_path": "./m61_matched_top20/J122154plus042837_sid432106/J122154plus042837_sid432106_obsOriented.png",
+    "orientation_source": "pca_v3"
+  },
+  {
+    "Galaxy": "J122154+042837",
+    "SubhaloID": 488530,
+    "inc_deg": 23.0,
+    "phi_deg": 0.0,
+    "rho_kpc": 26.0,
+    "Rvir_kpc": 457.0,
+    "span": "1.5Rvir",
+    "sign": "minus",
+    "observer_frame_kpc": {
+      "x": 26.0,
+      "y": 0.0,
+      "z": -685.5
+    },
+    "native_centered_kpc": {
+      "x": 83.68472966284111,
+      "y": -680.3279501091304,
+      "z": -27.147676172483052
+    },
+    "absolute_ckpc_h": {
+      "X": 28295.07670774861,
+      "Y": 19265.972018471075,
+      "Z": 4702.61846494201
+    },
+    "figure_path": "./m61_matched_top20/J122154plus042837_sid488530/J122154plus042837_sid488530_obsOriented.png",
+    "orientation_source": "pca_v3"
+  },
+  {
+    "Galaxy": "J122154+042837",
+    "SubhaloID": 488530,
+    "inc_deg": 23.0,
+    "phi_deg": 0.0,
+    "rho_kpc": 26.0,
+    "Rvir_kpc": 457.0,
+    "span": "1.5Rvir",
+    "sign": "plus",
+    "observer_frame_kpc": {
+      "x": 26.0,
+      "y": 0.0,
+      "z": 685.5
+    },
+    "native_centered_kpc": {
+      "x": -32.255192728545175,
+      "y": 684.4071164951843,
+      "z": 33.65637284069392
+    },
+    "absolute_ckpc_h": {
+      "X": 28216.539004320683,
+      "Y": 20190.443552588837,
+      "Z": 4743.8071277435365
+    },
+    "figure_path": "./m61_matched_top20/J122154plus042837_sid488530/J122154plus042837_sid488530_obsOriented.png",
+    "orientation_source": "pca_v3"
+  },
+  {
+    "Galaxy": "J122154+042837",
+    "SubhaloID": 488530,
+    "inc_deg": 23.0,
+    "phi_deg": 0.0,
+    "rho_kpc": 26.0,
+    "Rvir_kpc": 457.0,
+    "span": "2.0Rvir",
+    "sign": "minus",
+    "observer_frame_kpc": {
+      "x": 26.0,
+      "y": 0.0,
+      "z": -914.0
+    },
+    "native_centered_kpc": {
+      "x": 103.00805006140548,
+      "y": -907.7837945431828,
+      "z": -37.28168434134588
+    },
+    "absolute_ckpc_h": {
+      "X": 28308.166324986596,
+      "Y": 19111.893429451447,
+      "Z": 4695.753687808422
+    },
+    "figure_path": "./m61_matched_top20/J122154plus042837_sid488530/J122154plus042837_sid488530_obsOriented.png",
+    "orientation_source": "pca_v3"
+  },
+  {
+    "Galaxy": "J122154+042837",
+    "SubhaloID": 488530,
+    "inc_deg": 23.0,
+    "phi_deg": 0.0,
+    "rho_kpc": 26.0,
+    "Rvir_kpc": 457.0,
+    "span": "2.0Rvir",
+    "sign": "plus",
+    "observer_frame_kpc": {
+      "x": 26.0,
+      "y": 0.0,
+      "z": 914.0
+    },
+    "native_centered_kpc": {
+      "x": -51.57851312710955,
+      "y": 911.8629609292367,
+      "z": 43.790381009556754
+    },
+    "absolute_ckpc_h": {
+      "X": 28203.449387082695,
+      "Y": 20344.522141608464,
+      "Z": 4750.671904877124
+    },
+    "figure_path": "./m61_matched_top20/J122154plus042837_sid488530/J122154plus042837_sid488530_obsOriented.png",
+    "orientation_source": "pca_v3"
+  },
+  {
+    "Galaxy": "J122154+042837",
+    "SubhaloID": 456326,
+    "inc_deg": 23.0,
+    "phi_deg": 0.0,
+    "rho_kpc": 26.0,
+    "Rvir_kpc": 457.0,
+    "span": "1.5Rvir",
+    "sign": "minus",
+    "observer_frame_kpc": {
+      "x": 26.0,
+      "y": 0.0,
+      "z": -685.5
+    },
+    "native_centered_kpc": {
+      "x": -500.81030438402655,
+      "y": -413.32393563952803,
+      "z": -221.22073422315117
+    },
+    "absolute_ckpc_h": {
+      "X": 2015.8055431696355,
+      "Y": 18302.172569122784,
+      "Z": 8004.7993715122375
+    },
+    "figure_path": "./m61_matched_top20/J122154plus042837_sid456326/J122154plus042837_sid456326_obsOriented.png",
+    "orientation_source": "pca_v3"
+  },
+  {
+    "Galaxy": "J122154+042837",
+    "SubhaloID": 456326,
+    "inc_deg": 23.0,
+    "phi_deg": 0.0,
+    "rho_kpc": 26.0,
+    "Rvir_kpc": 457.0,
+    "span": "1.5Rvir",
+    "sign": "plus",
+    "observer_frame_kpc": {
+      "x": 26.0,
+      "y": 0.0,
+      "z": 685.5
+    },
+    "native_centered_kpc": {
+      "x": 524.6507987771234,
+      "y": 405.54773726237346,
+      "z": 175.66679294589335
+    },
+    "absolute_ckpc_h": {
+      "X": 2710.4528944509984,
+      "Y": 18856.876240346533,
+      "Z": 8273.650982416548
+    },
+    "figure_path": "./m61_matched_top20/J122154plus042837_sid456326/J122154plus042837_sid456326_obsOriented.png",
+    "orientation_source": "pca_v3"
+  },
+  {
+    "Galaxy": "J122154+042837",
+    "SubhaloID": 456326,
+    "inc_deg": 23.0,
+    "phi_deg": 0.0,
+    "rho_kpc": 26.0,
+    "Rvir_kpc": 457.0,
+    "span": "2.0Rvir",
+    "sign": "minus",
+    "observer_frame_kpc": {
+      "x": 26.0,
+      "y": 0.0,
+      "z": -914.0
+    },
+    "native_centered_kpc": {
+      "x": -671.7204882442181,
+      "y": -549.802547789845,
+      "z": -287.36865541799193
+    },
+    "absolute_ckpc_h": {
+      "X": 1900.0309846227417,
+      "Y": 18209.721957252157,
+      "Z": 7959.990769694852
+    },
+    "figure_path": "./m61_matched_top20/J122154plus042837_sid456326/J122154plus042837_sid456326_obsOriented.png",
+    "orientation_source": "pca_v3"
+  },
+  {
+    "Galaxy": "J122154+042837",
+    "SubhaloID": 456326,
+    "inc_deg": 23.0,
+    "phi_deg": 0.0,
+    "rho_kpc": 26.0,
+    "Rvir_kpc": 457.0,
+    "span": "2.0Rvir",
+    "sign": "plus",
+    "observer_frame_kpc": {
+      "x": 26.0,
+      "y": 0.0,
+      "z": 914.0
+    },
+    "native_centered_kpc": {
+      "x": 695.5609826373151,
+      "y": 542.0263494126904,
+      "z": 241.8147141407341
+    },
+    "absolute_ckpc_h": {
+      "X": 2826.227452997892,
+      "Y": 18949.326852217157,
+      "Z": 8318.459584233933
+    },
+    "figure_path": "./m61_matched_top20/J122154plus042837_sid456326/J122154plus042837_sid456326_obsOriented.png",
+    "orientation_source": "pca_v3"
+  },
+  {
+    "Galaxy": "J122154+042837",
+    "SubhaloID": 307487,
+    "inc_deg": 23.0,
+    "phi_deg": 0.0,
+    "rho_kpc": 26.0,
+    "Rvir_kpc": 457.0,
+    "span": "1.5Rvir",
+    "sign": "minus",
+    "observer_frame_kpc": {
+      "x": 26.0,
+      "y": 0.0,
+      "z": -685.5
+    },
+    "native_centered_kpc": {
+      "x": 346.04657194497577,
+      "y": -99.5353978372227,
+      "z": 583.8927338326077
+    },
+    "absolute_ckpc_h": {
+      "X": 16462.363119710528,
+      "Y": 21133.213393380065,
+      "Z": 22275.25159414821
+    },
+    "figure_path": "./m61_matched_top20/J122154plus042837_sid307487/J122154plus042837_sid307487_obsOriented.png",
+    "orientation_source": "pca_v3"
+  },
+  {
+    "Galaxy": "J122154+042837",
+    "SubhaloID": 307487,
+    "inc_deg": 23.0,
+    "phi_deg": 0.0,
+    "rho_kpc": 26.0,
+    "Rvir_kpc": 457.0,
+    "span": "1.5Rvir",
+    "sign": "plus",
+    "observer_frame_kpc": {
+      "x": 26.0,
+      "y": 0.0,
+      "z": 685.5
+    },
+    "native_centered_kpc": {
+      "x": -374.15531358873,
+      "y": 57.40663648389395,
+      "z": -572.1001043531851
+    },
+    "absolute_ckpc_h": {
+      "X": 15974.498362449995,
+      "Y": 21239.52592742919,
+      "Z": 21492.182045561152
+    },
+    "figure_path": "./m61_matched_top20/J122154plus042837_sid307487/J122154plus042837_sid307487_obsOriented.png",
+    "orientation_source": "pca_v3"
+  },
+  {
+    "Galaxy": "J122154+042837",
+    "SubhaloID": 307487,
+    "inc_deg": 23.0,
+    "phi_deg": 0.0,
+    "rho_kpc": 26.0,
+    "Rvir_kpc": 457.0,
+    "span": "2.0Rvir",
+    "sign": "minus",
+    "observer_frame_kpc": {
+      "x": 26.0,
+      "y": 0.0,
+      "z": -914.0
+    },
+    "native_centered_kpc": {
+      "x": 466.08021953392677,
+      "y": -125.69240355740881,
+      "z": 776.5582068635732
+    },
+    "absolute_ckpc_h": {
+      "X": 16543.67391258728,
+      "Y": 21115.49463770521,
+      "Z": 22405.763185579384
+    },
+    "figure_path": "./m61_matched_top20/J122154plus042837_sid307487/J122154plus042837_sid307487_obsOriented.png",
+    "orientation_source": "pca_v3"
+  },
+  {
+    "Galaxy": "J122154+042837",
+    "SubhaloID": 307487,
+    "inc_deg": 23.0,
+    "phi_deg": 0.0,
+    "rho_kpc": 26.0,
+    "Rvir_kpc": 457.0,
+    "span": "2.0Rvir",
+    "sign": "plus",
+    "observer_frame_kpc": {
+      "x": 26.0,
+      "y": 0.0,
+      "z": 914.0
+    },
+    "native_centered_kpc": {
+      "x": -494.188961177681,
+      "y": 83.56364220408005,
+      "z": -764.7655773841506
+    },
+    "absolute_ckpc_h": {
+      "X": 15893.18756957324,
+      "Y": 21257.244683104043,
+      "Z": 21361.670454129977
+    },
+    "figure_path": "./m61_matched_top20/J122154plus042837_sid307487/J122154plus042837_sid307487_obsOriented.png",
+    "orientation_source": "pca_v3"
+  },
+  {
+    "Galaxy": "J122154+042837",
+    "SubhaloID": 482889,
+    "inc_deg": 23.0,
+    "phi_deg": 0.0,
+    "rho_kpc": 26.0,
+    "Rvir_kpc": 457.0,
+    "span": "1.5Rvir",
+    "sign": "minus",
+    "observer_frame_kpc": {
+      "x": 26.0,
+      "y": 0.0,
+      "z": -685.5
+    },
+    "native_centered_kpc": {
+      "x": 59.99616187193613,
+      "y": -185.1823257652056,
+      "z": -657.7949656122535
+    },
+    "absolute_ckpc_h": {
+      "X": 8522.286907864549,
+      "Y": 33581.94811752665,
+      "Z": 21739.35695591926
+    },
+    "figure_path": "./m61_matched_top20/J122154plus042837_sid482889/J122154plus042837_sid482889_obsOriented.png",
+    "orientation_source": "pca_v3"
+  },
+  {
+    "Galaxy": "J122154+042837",
+    "SubhaloID": 482889,
+    "inc_deg": 23.0,
+    "phi_deg": 0.0,
+    "rho_kpc": 26.0,
+    "Rvir_kpc": 457.0,
+    "span": "1.5Rvir",
+    "sign": "plus",
+    "observer_frame_kpc": {
+      "x": 26.0,
+      "y": 0.0,
+      "z": 685.5
+    },
+    "native_centered_kpc": {
+      "x": -8.068179284352594,
+      "y": 185.00721077655913,
+      "z": 660.5251595841853
+    },
+    "absolute_ckpc_h": {
+      "X": 8476.180123165279,
+      "Y": 33832.714509580044,
+      "Z": 22632.387008727328
+    },
+    "figure_path": "./m61_matched_top20/J122154plus042837_sid482889/J122154plus042837_sid482889_obsOriented.png",
+    "orientation_source": "pca_v3"
+  },
+  {
+    "Galaxy": "J122154+042837",
+    "SubhaloID": 482889,
+    "inc_deg": 23.0,
+    "phi_deg": 0.0,
+    "rho_kpc": 26.0,
+    "Rvir_kpc": 457.0,
+    "span": "2.0Rvir",
+    "sign": "minus",
+    "observer_frame_kpc": {
+      "x": 26.0,
+      "y": 0.0,
+      "z": -914.0
+    },
+    "native_centered_kpc": {
+      "x": 71.34021873131758,
+      "y": -246.88058185549974,
+      "z": -877.5149864783266
+    },
+    "absolute_ckpc_h": {
+      "X": 8529.971371981095,
+      "Y": 33540.153718851085,
+      "Z": 21590.51861378458
+    },
+    "figure_path": "./m61_matched_top20/J122154plus042837_sid482889/J122154plus042837_sid482889_obsOriented.png",
+    "orientation_source": "pca_v3"
+  },
+  {
+    "Galaxy": "J122154+042837",
+    "SubhaloID": 482889,
+    "inc_deg": 23.0,
+    "phi_deg": 0.0,
+    "rho_kpc": 26.0,
+    "Rvir_kpc": 457.0,
+    "span": "2.0Rvir",
+    "sign": "plus",
+    "observer_frame_kpc": {
+      "x": 26.0,
+      "y": 0.0,
+      "z": 914.0
+    },
+    "native_centered_kpc": {
+      "x": -19.41223614373405,
+      "y": 246.70546686685327,
+      "z": 880.2451804502584
+    },
+    "absolute_ckpc_h": {
+      "X": 8468.495659048735,
+      "Y": 33874.50890825561,
+      "Z": 22781.225350862005
+    },
+    "figure_path": "./m61_matched_top20/J122154plus042837_sid482889/J122154plus042837_sid482889_obsOriented.png",
+    "orientation_source": "pca_v3"
+  },
+  {
+    "Galaxy": "J122154+042837",
+    "SubhaloID": 452978,
+    "inc_deg": 23.0,
+    "phi_deg": 0.0,
+    "rho_kpc": 26.0,
+    "Rvir_kpc": 457.0,
+    "span": "1.5Rvir",
+    "sign": "minus",
+    "observer_frame_kpc": {
+      "x": 26.0,
+      "y": 0.0,
+      "z": -685.5
+    },
+    "native_centered_kpc": {
+      "x": -243.259975267273,
+      "y": -566.7109508072309,
+      "z": 300.41559990807775
+    },
+    "absolute_ckpc_h": {
+      "X": 28653.12584900395,
+      "Y": 26291.07484567318,
+      "Z": 23177.54254300273
+    },
+    "figure_path": "./m61_matched_top20/J122154plus042837_sid452978/J122154plus042837_sid452978_obsOriented.png",
+    "orientation_source": "pca_v3"
+  },
+  {
+    "Galaxy": "J122154+042837",
+    "SubhaloID": 452978,
+    "inc_deg": 23.0,
+    "phi_deg": 0.0,
+    "rho_kpc": 26.0,
+    "Rvir_kpc": 457.0,
+    "span": "1.5Rvir",
+    "sign": "plus",
+    "observer_frame_kpc": {
+      "x": 26.0,
+      "y": 0.0,
+      "z": 685.5
+    },
+    "native_centered_kpc": {
+      "x": 267.448144830303,
+      "y": 535.841245488365,
+      "z": -334.56225050102006
+    },
+    "absolute_ckpc_h": {
+      "X": 28999.079529558046,
+      "Y": 27037.94370344382,
+      "Z": 22747.40854713561
+    },
+    "figure_path": "./m61_matched_top20/J122154plus042837_sid452978/J122154plus042837_sid452978_obsOriented.png",
+    "orientation_source": "pca_v3"
+  },
+  {
+    "Galaxy": "J122154+042837",
+    "SubhaloID": 452978,
+    "inc_deg": 23.0,
+    "phi_deg": 0.0,
+    "rho_kpc": 26.0,
+    "Rvir_kpc": 457.0,
+    "span": "2.0Rvir",
+    "sign": "minus",
+    "observer_frame_kpc": {
+      "x": 26.0,
+      "y": 0.0,
+      "z": -914.0
+    },
+    "native_centered_kpc": {
+      "x": -328.3779952835357,
+      "y": -750.4696501898302,
+      "z": 406.2452416429274
+    },
+    "absolute_ckpc_h": {
+      "X": 28595.466902244934,
+      "Y": 26166.59670271141,
+      "Z": 23249.23154231392
+    },
+    "figure_path": "./m61_matched_top20/J122154plus042837_sid452978/J122154plus042837_sid452978_obsOriented.png",
+    "orientation_source": "pca_v3"
+  },
+  {
+    "Galaxy": "J122154+042837",
+    "SubhaloID": 452978,
+    "inc_deg": 23.0,
+    "phi_deg": 0.0,
+    "rho_kpc": 26.0,
+    "Rvir_kpc": 457.0,
+    "span": "2.0Rvir",
+    "sign": "plus",
+    "observer_frame_kpc": {
+      "x": 26.0,
+      "y": 0.0,
+      "z": 914.0
+    },
+    "native_centered_kpc": {
+      "x": 352.56616484656575,
+      "y": 719.5999448709642,
+      "z": -440.3918922358697
+    },
+    "absolute_ckpc_h": {
+      "X": 29056.738476317063,
+      "Y": 27162.421846405592,
+      "Z": 22675.71954782442
+    },
+    "figure_path": "./m61_matched_top20/J122154plus042837_sid452978/J122154plus042837_sid452978_obsOriented.png",
+    "orientation_source": "pca_v3"
+  },
+  {
+    "Galaxy": "J122154+042837",
+    "SubhaloID": 342448,
+    "inc_deg": 23.0,
+    "phi_deg": 0.0,
+    "rho_kpc": 26.0,
+    "Rvir_kpc": 457.0,
+    "span": "1.5Rvir",
+    "sign": "minus",
+    "observer_frame_kpc": {
+      "x": 26.0,
+      "y": 0.0,
+      "z": -685.5
+    },
+    "native_centered_kpc": {
+      "x": -675.0672797973461,
+      "y": -79.65677751131322,
+      "z": 92.33209378934718
+    },
+    "absolute_ckpc_h": {
+      "X": 24787.160596540278,
+      "Y": 6028.405733288836,
+      "Z": 33964.409041582905
+    },
+    "figure_path": "./m61_matched_top20/J122154plus042837_sid342448/J122154plus042837_sid342448_obsOriented.png",
+    "orientation_source": "pca_v3"
+  },
+  {
+    "Galaxy": "J122154+042837",
+    "SubhaloID": 342448,
+    "inc_deg": 23.0,
+    "phi_deg": 0.0,
+    "rho_kpc": 26.0,
+    "Rvir_kpc": 457.0,
+    "span": "1.5Rvir",
+    "sign": "plus",
+    "observer_frame_kpc": {
+      "x": 26.0,
+      "y": 0.0,
+      "z": 685.5
+    },
+    "native_centered_kpc": {
+      "x": 664.50853518612,
+      "y": 96.44959275858658,
+      "z": -140.3999028543113
+    },
+    "absolute_ckpc_h": {
+      "X": 25694.589253610076,
+      "Y": 6147.700188509667,
+      "Z": 33806.75638705649
+    },
+    "figure_path": "./m61_matched_top20/J122154plus042837_sid342448/J122154plus042837_sid342448_obsOriented.png",
+    "orientation_source": "pca_v3"
+  },
+  {
+    "Galaxy": "J122154+042837",
+    "SubhaloID": 342448,
+    "inc_deg": 23.0,
+    "phi_deg": 0.0,
+    "rho_kpc": 26.0,
+    "Rvir_kpc": 457.0,
+    "span": "2.0Rvir",
+    "sign": "minus",
+    "observer_frame_kpc": {
+      "x": 26.0,
+      "y": 0.0,
+      "z": -914.0
+    },
+    "native_centered_kpc": {
+      "x": -898.3299156279238,
+      "y": -109.00783922296318,
+      "z": 131.12075989662358
+    },
+    "absolute_ckpc_h": {
+      "X": 24635.922487028645,
+      "Y": 6008.523324085365,
+      "Z": 33990.68448400397
+    },
+    "figure_path": "./m61_matched_top20/J122154plus042837_sid342448/J122154plus042837_sid342448_obsOriented.png",
+    "orientation_source": "pca_v3"
+  },
+  {
+    "Galaxy": "J122154+042837",
+    "SubhaloID": 342448,
+    "inc_deg": 23.0,
+    "phi_deg": 0.0,
+    "rho_kpc": 26.0,
+    "Rvir_kpc": 457.0,
+    "span": "2.0Rvir",
+    "sign": "plus",
+    "observer_frame_kpc": {
+      "x": 26.0,
+      "y": 0.0,
+      "z": 914.0
+    },
+    "native_centered_kpc": {
+      "x": 887.7711710166976,
+      "y": 125.80065447023654,
+      "z": -179.18856896158772
+    },
+    "absolute_ckpc_h": {
+      "X": 25845.827363121713,
+      "Y": 6167.582597713138,
+      "Z": 33780.48094463542
+    },
+    "figure_path": "./m61_matched_top20/J122154plus042837_sid342448/J122154plus042837_sid342448_obsOriented.png",
+    "orientation_source": "pca_v3"
+  },
+  {
+    "Galaxy": "J122154+042837",
+    "SubhaloID": 143881,
+    "inc_deg": 23.0,
+    "phi_deg": 0.0,
+    "rho_kpc": 26.0,
+    "Rvir_kpc": 457.0,
+    "span": "1.5Rvir",
+    "sign": "minus",
+    "observer_frame_kpc": {
+      "x": 26.0,
+      "y": 0.0,
+      "z": -685.5
+    },
+    "native_centered_kpc": {
+      "x": -337.6895006310638,
+      "y": 497.30381526938925,
+      "z": -330.5162121319497
+    },
+    "absolute_ckpc_h": {
+      "X": 19669.73155414752,
+      "Y": 5216.217354463484,
+      "Z": 30985.754802276817
+    },
+    "figure_path": "./m61_matched_top20/J122154plus042837_sid143881/J122154plus042837_sid143881_obsOriented.png",
+    "orientation_source": "pca_v3"
+  },
+  {
+    "Galaxy": "J122154+042837",
+    "SubhaloID": 143881,
+    "inc_deg": 23.0,
+    "phi_deg": 0.0,
+    "rho_kpc": 26.0,
+    "Rvir_kpc": 457.0,
+    "span": "1.5Rvir",
+    "sign": "plus",
+    "observer_frame_kpc": {
+      "x": 26.0,
+      "y": 0.0,
+      "z": 685.5
+    },
+    "native_centered_kpc": {
+      "x": 381.31313402248395,
+      "y": -479.6811538186937,
+      "z": 308.3707743822653
+    },
+    "absolute_ckpc_h": {
+      "X": 20156.78393886183,
+      "Y": 4554.407736403216,
+      "Z": 31418.536846941548
+    },
+    "figure_path": "./m61_matched_top20/J122154plus042837_sid143881/J122154plus042837_sid143881_obsOriented.png",
+    "orientation_source": "pca_v3"
+  },
+  {
+    "Galaxy": "J122154+042837",
+    "SubhaloID": 143881,
+    "inc_deg": 23.0,
+    "phi_deg": 0.0,
+    "rho_kpc": 26.0,
+    "Rvir_kpc": 457.0,
+    "span": "2.0Rvir",
+    "sign": "minus",
+    "observer_frame_kpc": {
+      "x": 26.0,
+      "y": 0.0,
+      "z": -914.0
+    },
+    "native_centered_kpc": {
+      "x": -457.5232730733218,
+      "y": 660.1346434507363,
+      "z": -436.99737655098556
+    },
+    "absolute_ckpc_h": {
+      "X": 19588.556156695133,
+      "Y": 5326.518957473529,
+      "Z": 30913.624461499363
+    },
+    "figure_path": "./m61_matched_top20/J122154plus042837_sid143881/J122154plus042837_sid143881_obsOriented.png",
+    "orientation_source": "pca_v3"
+  },
+  {
+    "Galaxy": "J122154+042837",
+    "SubhaloID": 143881,
+    "inc_deg": 23.0,
+    "phi_deg": 0.0,
+    "rho_kpc": 26.0,
+    "Rvir_kpc": 457.0,
+    "span": "2.0Rvir",
+    "sign": "plus",
+    "observer_frame_kpc": {
+      "x": 26.0,
+      "y": 0.0,
+      "z": 914.0
+    },
+    "native_centered_kpc": {
+      "x": 501.1469064647419,
+      "y": -642.5119820000409,
+      "z": 414.8519388013011
+    },
+    "absolute_ckpc_h": {
+      "X": 20237.959336314216,
+      "Y": 4444.106133393172,
+      "Z": 31490.667187719002
+    },
+    "figure_path": "./m61_matched_top20/J122154plus042837_sid143881/J122154plus042837_sid143881_obsOriented.png",
+    "orientation_source": "pca_v3"
+  },
+  {
+    "Galaxy": "J122154+042837",
+    "SubhaloID": 413372,
+    "inc_deg": 23.0,
+    "phi_deg": 0.0,
+    "rho_kpc": 26.0,
+    "Rvir_kpc": 457.0,
+    "span": "1.5Rvir",
+    "sign": "minus",
+    "observer_frame_kpc": {
+      "x": 26.0,
+      "y": 0.0,
+      "z": -685.5
+    },
+    "native_centered_kpc": {
+      "x": 17.076166066332945,
+      "y": -521.8700844315737,
+      "z": -444.9115300010298
+    },
+    "absolute_ckpc_h": {
+      "X": 31929.125988643333,
+      "Y": 18218.696142306053,
+      "Z": -154.6160568728929
+    },
+    "figure_path": "./m61_matched_top20/J122154plus042837_sid413372/J122154plus042837_sid413372_obsOriented.png",
+    "orientation_source": "pca_v3"
+  },
+  {
+    "Galaxy": "J122154+042837",
+    "SubhaloID": 413372,
+    "inc_deg": 23.0,
+    "phi_deg": 0.0,
+    "rho_kpc": 26.0,
+    "Rvir_kpc": 457.0,
+    "span": "1.5Rvir",
+    "sign": "plus",
+    "observer_frame_kpc": {
+      "x": 26.0,
+      "y": 0.0,
+      "z": 685.5
+    },
+    "native_centered_kpc": {
+      "x": 34.91705764778723,
+      "y": 521.6771921667248,
+      "z": 444.0945352717857
+    },
+    "absolute_ckpc_h": {
+      "X": 31941.21140860061,
+      "Y": 18925.59506747374,
+      "Z": 447.5966517429123
+    },
+    "figure_path": "./m61_matched_top20/J122154plus042837_sid413372/J122154plus042837_sid413372_obsOriented.png",
+    "orientation_source": "pca_v3"
+  },
+  {
+    "Galaxy": "J122154+042837",
+    "SubhaloID": 413372,
+    "inc_deg": 23.0,
+    "phi_deg": 0.0,
+    "rho_kpc": 26.0,
+    "Rvir_kpc": 457.0,
+    "span": "2.0Rvir",
+    "sign": "minus",
+    "observer_frame_kpc": {
+      "x": 26.0,
+      "y": 0.0,
+      "z": -914.0
+    },
+    "native_centered_kpc": {
+      "x": 14.102684136090565,
+      "y": -695.7946305312901,
+      "z": -593.079207546499
+    },
+    "absolute_ckpc_h": {
+      "X": 31927.111751983786,
+      "Y": 18100.879654778106,
+      "Z": -254.98484164219371
+    },
+    "figure_path": "./m61_matched_top20/J122154plus042837_sid413372/J122154plus042837_sid413372_obsOriented.png",
+    "orientation_source": "pca_v3"
+  },
+  {
+    "Galaxy": "J122154+042837",
+    "SubhaloID": 413372,
+    "inc_deg": 23.0,
+    "phi_deg": 0.0,
+    "rho_kpc": 26.0,
+    "Rvir_kpc": 457.0,
+    "span": "2.0Rvir",
+    "sign": "plus",
+    "observer_frame_kpc": {
+      "x": 26.0,
+      "y": 0.0,
+      "z": 914.0
+    },
+    "native_centered_kpc": {
+      "x": 37.89053957802961,
+      "y": 695.6017382664412,
+      "z": 592.2622128172549
+    },
+    "absolute_ckpc_h": {
+      "X": 31943.225645260158,
+      "Y": 19043.411555001687,
+      "Z": 547.9654365122132
+    },
+    "figure_path": "./m61_matched_top20/J122154plus042837_sid413372/J122154plus042837_sid413372_obsOriented.png",
+    "orientation_source": "pca_v3"
+  }
+]
