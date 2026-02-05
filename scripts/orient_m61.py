@@ -20,22 +20,21 @@ This script:
         * PCA v3 (default)
         * stellar spin (optional override list)
   - applies the OBS inc + PA to set the on-sky disk orientation
-  - for each sightline in the obs CSV (e.g., QSO-A and QSO-B):
+  - for each sightline in the obs CSV (each row can be a sightline):
         uses its rho,phi to place the impact point in the observer plane
   - loops over alpha rotations about the (post-inc) disk normal
   - writes rays CSVs and small JSON headers per SID and per run length
 
-Important convention notes (matches the structure of your older COS-GASS script):
+Important convention notes:
   - Observer frame axes: x,y in sky plane; +z is LOS direction.
   - rho,phi define a position in sky plane:
         x = rho cos(phi), y = rho sin(phi)     (degrees, phi measured from +x)
   - inc tilts the galaxy about observer x-axis (rot_x(inc)).
   - PA is implemented as a rotation about observer z-axis (rot_z(PA)) AFTER the tilt.
-    This sets the "line of nodes" direction in the sky plane.
   - If your PA is measured "east of north" (astronomy convention),
     pass --pa-from-north to convert to this script’s +x-based convention.
 
-Outputs (suggested layout; all under --out-base):
+Outputs (under --out-base):
   <out-base>/sid<SID>/
       analysis/
           debug_sid<SID>_snap99.png
@@ -62,9 +61,39 @@ import numpy as np
 import pandas as pd
 import h5py
 
-# Matplotlib only if figures enabled
-import matplotlib as mpl
-import matplotlib.pyplot as plt
+
+# ──────────────────────────────────────────────────────────────────────
+# Runtime helper: reduce Matplotlib ABI headaches on HPC
+# (forces Agg backend; optionally prefers conda libstdc++ if present)
+# ──────────────────────────────────────────────────────────────────────
+
+def _force_noninteractive_matplotlib():
+    os.environ.setdefault("MPLBACKEND", "Agg")
+
+def _prefer_conda_libstdcxx():
+    """
+    If Matplotlib import fails due to GLIBCXX mismatch, it usually means the
+    system libstdc++ is being picked instead of conda's.
+
+    This tries to prefer conda's lib directory before importing matplotlib.
+    It is safe to run even if you already fixed your environment.
+    """
+    try:
+        import sys
+        conda_prefix = sys.prefix
+        conda_lib = os.path.join(conda_prefix, "lib")
+        if os.path.isdir(conda_lib):
+            ld = os.environ.get("LD_LIBRARY_PATH", "")
+            if conda_lib not in ld.split(":"):
+                os.environ["LD_LIBRARY_PATH"] = conda_lib + (":" + ld if ld else "")
+            # Optional: LD_PRELOAD conda libstdc++ if it exists
+            cand = os.path.join(conda_lib, "libstdc++.so.6")
+            if os.path.isfile(cand):
+                pre = os.environ.get("LD_PRELOAD", "")
+                if cand not in pre.split(":"):
+                    os.environ["LD_PRELOAD"] = cand + (":" + pre if pre else "")
+    except Exception:
+        pass
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -72,9 +101,7 @@ import matplotlib.pyplot as plt
 # ──────────────────────────────────────────────────────────────────────
 
 def prefer(df: pd.DataFrame, base: str) -> str:
-    """
-    Pick a column name for `base` among common variants.
-    """
+    """Pick a column name for `base` among common variants."""
     for cand in (base, f"{base}_obs", f"{base}_sum", f"{base}_x", f"{base}_y",
                  base.lower(), base.upper()):
         if cand in df.columns:
@@ -91,17 +118,6 @@ def minimal_image_delta(dpos, box):
 
 def recenter_positions(x, center, box):
     return minimal_image_delta(x - center[None, :], box)
-
-def safe_float(x, default=np.nan):
-    try:
-        if x is None:
-            return default
-        v = float(x)
-        if np.isfinite(v):
-            return v
-        return default
-    except Exception:
-        return default
 
 def ensure_dir(path: str):
     os.makedirs(path, exist_ok=True)
@@ -133,25 +149,20 @@ def rodrigues_axis_angle(axis, theta_rad: float) -> np.ndarray:
     ], float)
 
 def R_from_u_to_v(u, v) -> np.ndarray:
-    """
-    Active rotation taking u -> v.
-    """
+    """Active rotation taking u -> v."""
     u = unit(u)
     v = unit(v)
     c = float(np.clip(np.dot(u, v), -1.0, 1.0))
     if c > 1 - 1e-12:
         return np.eye(3)
     if c < -1 + 1e-12:
-        # 180-degree: pick any orthogonal axis
         a = unit(np.cross(u, [1, 0, 0]) if abs(u[0]) < 0.9 else np.cross(u, [0, 1, 0]))
         return rodrigues_axis_angle(a, math.pi)
     axis = unit(np.cross(u, v))
     return rodrigues_axis_angle(axis, math.acos(c))
 
 def pca3_weighted(X, w):
-    """
-    Mass-weighted 3D PCA. Return evals(desc), evecs(cols), and COM.
-    """
+    """Mass-weighted 3D PCA. Return evals(desc), evecs(cols), and COM."""
     X = np.asarray(X, float)
     w = np.asarray(w, float)
     wsum = np.sum(w)
@@ -175,9 +186,7 @@ def pca2_weighted(XY, w):
     return maj, ang
 
 def stellar_spin_vector(X_rel_ckpch, V_kms, M_1e10, remove_bulk_vel: bool = False):
-    """
-    Mass-weighted stellar angular momentum vector (code units).
-    """
+    """Mass-weighted stellar angular momentum vector (code units)."""
     if remove_bulk_vel:
         vcm = np.sum(V_kms * M_1e10[:, None], axis=0) / max(np.sum(M_1e10), 1e-30)
         V_rel = V_kms - vcm[None, :]
@@ -212,7 +221,7 @@ def sightline_endpoints_codeunits(center_ckpch, R_cur, rho_ckpch, phi_deg, half_
 
     ez_obs = np.array([0.0, 0.0, 1.0], float)
 
-    # Map observer vectors into native by right-multiplication consistent with your earlier script:
+    # Map observer vectors into native by right-multiplication:
     # r_nat = r_obs @ R_cur
     r_nat = r_obs @ R_cur
     L_nat = unit(ez_obs @ R_cur)
@@ -241,9 +250,7 @@ def _find_chunks(groupcat_base: str, snap: int) -> List[str]:
     return files
 
 def _read_header_any(groupcat_base: str, snap: int):
-    """
-    Return (h, box_ckpch, offs_sub, offs_grp) if offsets exist, else offs_* = None.
-    """
+    """Return (h, box_ckpch, offs_sub, offs_grp) if offsets exist, else offs_* = None."""
     candidates = []
     p0 = _chunk_path(groupcat_base, snap, 0)
     if os.path.exists(p0):
@@ -273,7 +280,6 @@ def _read_header_any(groupcat_base: str, snap: int):
         except Exception:
             continue
 
-    # last resort
     ff = candidates[0]
     with h5py.File(ff, "r") as f:
         h = float(f["Header"].attrs["HubbleParam"])
@@ -318,7 +324,6 @@ def read_single_subhalo(groupcat_base: str, snap: int, subhalo_id: int) -> Dict[
         return {"h": h, "BoxSize": boxsize, "SubhaloPos": pos,
                 "SubhaloHalfmassRadType": hmr, "SubhaloSpin": spin, "SubhaloGrNr": grnr}
 
-    # fallback linear scan
     files = _find_chunks(groupcat_base, snap)
     remaining = subhalo_id
     for ff in files:
@@ -364,7 +369,6 @@ def read_group_field(groupcat_base: str, snap: int, group_index: int, field: str
             except Exception:
                 return np.nan, h
 
-    # fallback linear scan
     for ff in _find_chunks(groupcat_base, snap):
         if not _is_valid_chunk_with("Group", ff):
             continue
@@ -388,11 +392,7 @@ def read_group_field(groupcat_base: str, snap: int, group_index: int, field: str
 # ──────────────────────────────────────────────────────────────────────
 
 def find_cutout_h5(sid: int, cutout_root: str) -> str:
-    """
-    For HPC layout:
-      cutout_root/out_sub_<SID>/*.hdf5  (pick first match)
-    Accepts fallback patterns too.
-    """
+    """For HPC layout: cutout_root/out_sub_<SID>/*.hdf5 (pick first match)."""
     sid = int(sid)
     sub_dir = os.path.join(cutout_root, f"out_sub_{sid}")
     pats = [
@@ -421,9 +421,7 @@ def read_cutout_particles(h5_path: str):
 # ──────────────────────────────────────────────────────────────────────
 
 def build_face_rotation_from_normal(normal_vec: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-    """
-    Return (R_face_noflip, R_face_flip) that map +/-normal -> +z.
-    """
+    """Return (R_face_noflip, R_face_flip) that map +/-normal -> +z."""
     n_hat = unit(np.asarray(normal_vec, float))
     if np.linalg.norm(n_hat) == 0:
         return np.eye(3), np.eye(3)
@@ -454,9 +452,7 @@ def build_R_bases(normal_vec: np.ndarray, inc_deg: float, pa_deg: float) -> Tupl
     return R_base_noflip, R_base_flip, n_hat, -n_hat
 
 def build_normal_from_pca_v3(Xs_rel_ckpch: np.ndarray, Ms_1e10: np.ndarray, h: float) -> np.ndarray:
-    """
-    PCA v3 from stellar positions (in kpc), weighted by stellar masses (Msun).
-    """
+    """PCA v3 from stellar positions (in kpc), weighted by stellar masses."""
     Xs_kpc  = Xs_rel_ckpch / h
     Ms_msun = Ms_1e10 * 1e10 / h
     _, evecs3, _ = pca3_weighted(Xs_kpc, Ms_msun)
@@ -465,10 +461,21 @@ def build_normal_from_pca_v3(Xs_rel_ckpch: np.ndarray, Ms_1e10: np.ndarray, h: f
 
 
 # ──────────────────────────────────────────────────────────────────────
-# Debug figure (optional; can be heavy on cluster)
+# Debug figure (optional)
 # ──────────────────────────────────────────────────────────────────────
 
-def setup_plot_style():
+def _mpl_import():
+    """
+    Import matplotlib lazily.
+    If this fails with GLIBCXX mismatch, the environment is still loading system libstdc++.
+    """
+    _force_noninteractive_matplotlib()
+    _prefer_conda_libstdcxx()
+    import matplotlib as mpl  # noqa
+    import matplotlib.pyplot as plt  # noqa
+    return mpl, plt
+
+def setup_plot_style(mpl):
     bg_color = "#0f111a"
     fg_color = "#eaeaea"
     mpl.rcParams.update({
@@ -513,10 +520,8 @@ def make_debug_figure(
     vmax: float = 7.0,
     remove_bulk_vel: bool = False,
 ):
-    """
-    Largely mirrors your older figure logic, but trimmed.
-    """
-    setup_plot_style()
+    mpl, plt = _mpl_import()
+    setup_plot_style(mpl)
 
     Xs_kpc  = Xs_rel_ckpch / h
     Ms_msun = Ms_1e10 * 1e10 / h
@@ -617,36 +622,52 @@ def make_debug_figure(
 # Loaders: obs CSV and matches CSV
 # ──────────────────────────────────────────────────────────────────────
 
-def load_obs_geometry(obs_csv):
+def load_obs_geometry(obs_csv: str) -> Dict[str, Any]:
     """
-    Load observational geometry for M61 (or a single target) from a CSV.
+    Load observational geometry from a CSV.
 
-    Returns dict with keys:
-      rho_kpc, phi_deg, inc_deg, pa_deg, Rvir_kpc, (and optional metadata)
-    Accepts multiple common column-name variants.
+    FIXED BEHAVIOR:
+      - Always returns obs["sightlines"] as a list (one per row in CSV).
+      - Returns inc_deg and pa_deg as scalars taken from the first row,
+        or an M61 row if a galaxy/name column contains "M61".
+
+    Required columns (with many accepted aliases):
+      - rho (impact parameter) in kpc
+      - phi in degrees
+      - inc in degrees
+      - pa in degrees
+
+    Output dict:
+      obs = {
+        "inc_deg": float,
+        "pa_deg": float,
+        "Rvir_kpc": optional float,
+        "sightlines": [
+            {"sightline_id": str, "rho_kpc": float, "phi_deg": float, "Rvir_kpc": optional float},
+            ...
+        ],
+        ... optional metadata ...
+      }
     """
-    import pandas as pd
-    import numpy as np
-
     df = pd.read_csv(obs_csv)
+    if df.shape[0] == 0:
+        raise RuntimeError(f"Obs CSV is empty: {obs_csv}")
 
-    # Build a case-insensitive column map: lower_name -> actual_name
     colmap = {c.strip().lower(): c for c in df.columns}
 
-    def pick_col(candidates):
-        for cand in candidates:
-            if cand.lower() in colmap:
-                return colmap[cand.lower()]
+    def pick_col(cands):
+        for cand in cands:
+            key = cand.strip().lower()
+            if key in colmap:
+                return colmap[key]
         return None
 
-    # --- Column discovery (many aliases) ---
-    rho_col = pick_col(["rho", "rho_kpc", "impact_kpc", "impact_parameter_kpc", "impact"])
-    phi_col = pick_col(["phi", "phi_deg", "theta_deg", "theta", "azimuth_deg", "azimuth"])
-    inc_col = pick_col(["inc", "inc_deg", "inclination_deg", "inclination", "i_deg"])
+    rho_col = pick_col(["rho", "rho_kpc", "impact_kpc", "impact_parameter_kpc", "impact", "b_kpc", "b"])
+    phi_col = pick_col(["phi", "phi_deg", "theta_deg", "theta", "azimuth_deg", "azimuth", "phi(deg)"])
+    inc_col = pick_col(["inc", "inc_deg", "inclination_deg", "inclination", "i_deg", "i"])
     pa_col  = pick_col(["pa", "pa_deg", "pa(deg)", "position_angle_deg", "positionangle_deg", "pa_gal_deg", "pa_gal", "PA_deg"])
-    rvir_col= pick_col(["rvir_kpc", "r_vir", "rvir", "rvir(kpc)", "r200_kpc"])
+    rvir_col= pick_col(["rvir_kpc", "r_vir", "rvir", "rvir(kpc)", "r200_kpc", "r200"])
 
-    # If essential fields are missing, fail loudly with an actionable message
     missing = []
     if rho_col is None: missing.append("rho (e.g. rho/impact_kpc)")
     if phi_col is None: missing.append("phi (e.g. phi/theta_deg)")
@@ -659,51 +680,76 @@ def load_obs_geometry(obs_csv):
             + f". Found columns: {list(df.columns)}"
         )
 
-    # If multiple rows, try to pick M61 row; else take first row
-    row = None
-    for name_col in ["galaxy_name", "galaxy", "name"]:
-        if name_col in colmap:
-            actual = colmap[name_col]
-            m = df[actual].astype(str).str.contains("M61", case=False, na=False)
-            if m.any():
-                row = df.loc[m].iloc[0]
-                break
-    if row is None:
-        row = df.iloc[0]
-
-    # Parse numeric values
     def to_float(x):
         try:
             return float(x)
         except Exception:
             return float("nan")
 
-    obs = {
-        "rho_kpc": to_float(row[rho_col]),
-        "phi_deg": to_float(row[phi_col]),
-        "inc_deg": to_float(row[inc_col]),
-        "pa_deg":  to_float(row[pa_col]),
+    # Pick a representative row for galaxy-wide inc/PA (prefer row matching M61 if possible)
+    row0 = df.iloc[0]
+    for name_col in ["galaxy_name", "galaxy", "name"]:
+        if name_col.lower() in colmap:
+            actual = colmap[name_col.lower()]
+            m = df[actual].astype(str).str.contains("M61", case=False, na=False)
+            if m.any():
+                row0 = df.loc[m].iloc[0]
+                break
+
+    inc_deg = to_float(row0[inc_col])
+    pa_deg  = to_float(row0[pa_col])
+    if not np.isfinite(inc_deg):
+        raise RuntimeError(f"inc is not finite (from column '{inc_col}'): {row0[inc_col]}")
+    if not np.isfinite(pa_deg):
+        raise RuntimeError(f"pa is not finite (from column '{pa_col}'): {row0[pa_col]}")
+
+    # Build per-row sightlines
+    sightlines: List[Dict[str, Any]] = []
+    for idx, row in df.iterrows():
+        sid = None
+        for cand in ["sightline_id", "sightline", "qso", "qso_name", "target", "id"]:
+            if cand.lower() in colmap:
+                sid = str(row[colmap[cand.lower()]])
+                break
+        if sid is None:
+            sid = f"sl_{idx:03d}"
+
+        rho_kpc = to_float(row[rho_col])
+        phi_deg = to_float(row[phi_col])
+
+        if not (np.isfinite(rho_kpc) and np.isfinite(phi_deg)):
+            continue
+
+        sl = {"sightline_id": sid, "rho_kpc": rho_kpc, "phi_deg": phi_deg}
+        if rvir_col is not None:
+            rv = to_float(row[rvir_col])
+            if np.isfinite(rv):
+                sl["Rvir_kpc"] = rv
+        sightlines.append(sl)
+
+    if len(sightlines) == 0:
+        raise RuntimeError(
+            f"No valid sightlines found (finite rho/phi) using rho_col={rho_col}, phi_col={phi_col}."
+        )
+
+    obs: Dict[str, Any] = {
+        "inc_deg": float(inc_deg),
+        "pa_deg": float(pa_deg),
+        "sightlines": sightlines,
     }
+
+    # Optional global Rvir: prefer row0 if present and finite
     if rvir_col is not None:
-        obs["Rvir_kpc"] = to_float(row[rvir_col])
+        rv0 = to_float(row0[rvir_col])
+        if np.isfinite(rv0):
+            obs["Rvir_kpc"] = float(rv0)
 
-    # Optional metadata passthrough if present
-    for k in ["galaxy_name", "galaxy_id", "qso_name", "ra_deg", "dec_deg", "distance_mpc"]:
-        if k in colmap:
-            obs[k] = row[colmap[k]]
-
-    # Basic sanity
-    if not np.isfinite(obs["rho_kpc"]):
-        raise RuntimeError(f"rho is not finite (from column '{rho_col}'): {row[rho_col]}")
-    if not np.isfinite(obs["phi_deg"]):
-        raise RuntimeError(f"phi is not finite (from column '{phi_col}'): {row[phi_col]}")
-    if not np.isfinite(obs["inc_deg"]):
-        raise RuntimeError(f"inc is not finite (from column '{inc_col}'): {row[inc_col]}")
-    if not np.isfinite(obs["pa_deg"]):
-        raise RuntimeError(f"pa is not finite (from column '{pa_col}'): {row[pa_col]}")
+    # Optional metadata passthrough
+    for k in ["galaxy_name", "galaxy_id", "ra_deg", "dec_deg", "distance_mpc"]:
+        if k.lower() in colmap:
+            obs[k] = row0[colmap[k.lower()]]
 
     return obs
-
 
 def load_top_matches(matches_csv: str, topn: int) -> pd.DataFrame:
     """
@@ -716,21 +762,18 @@ def load_top_matches(matches_csv: str, topn: int) -> pd.DataFrame:
     """
     df = pd.read_csv(matches_csv)
 
-    # Identify SubhaloID column
     sid_col = None
     for c in ["SubhaloID", "subhalo_id", "sid", "SubfindID"]:
         if c in df.columns:
             sid_col = c
             break
     if sid_col is None:
-        # try robust "prefer"
         sid_col = prefer(df, "SubhaloID")
 
     df[sid_col] = pd.to_numeric(df[sid_col], errors="coerce").astype("Int64")
     df = df[pd.notna(df[sid_col])].copy()
     df[sid_col] = df[sid_col].astype(int)
 
-    # Sort if possible
     sort_col = None
     for c in ["rank", "Rank", "distance", "dist", "d3d", "D3D", "delta", "score"]:
         if c in df.columns:
@@ -785,10 +828,8 @@ def process_subhalo(
     Ms_1e10 = stars["Masses"]
     Vs_kms = stars["Velocities"]
 
-    # recenter
     Xs_rel_ckpch = recenter_positions(Xs_ckpch, center_ckpch, box_ckpch)
 
-    # aperture cut (optional)
     if cfg["USE_RHALF_APERTURE"] and np.isfinite(rhalf_star_ckpch_cat) and rhalf_star_ckpch_cat > 0:
         R = np.linalg.norm(Xs_rel_ckpch, axis=1)
         sel = (R <= cfg["RHALF_MULTIPLIER"] * rhalf_star_ckpch_cat)
@@ -798,24 +839,22 @@ def process_subhalo(
             Vs_kms = Vs_kms[sel]
 
     # Determine Rvir fallback if not in obs
-    Rvir_kpc_used = obs.get("rvir_kpc", np.nan)
+    Rvir_kpc_used = obs.get("Rvir_kpc", np.nan)
     if (not np.isfinite(Rvir_kpc_used)) and (grnr >= 0):
         R200_ckpch, _ = read_group_field(cfg["GROUPCAT_BASE"], snap, grnr, field="Group_R_Crit200")
         if np.isfinite(R200_ckpch):
-            Rvir_kpc_used = float(R200_ckpch / h)  # ckpc/h -> kpc at snap~0
+            Rvir_kpc_used = float(R200_ckpch / h)  # ckpc/h -> kpc
 
     if not np.isfinite(Rvir_kpc_used) or (Rvir_kpc_used <= 0):
         Rvir_kpc_used = cfg["DEFAULT_RVIR_KPC"]
 
-    # inc/PA from obs
     inc_deg = float(obs["inc_deg"])
     pa_deg = float(obs["pa_deg"])
     if cfg["PA_FROM_NORTH"]:
-        # astronomy PA: east of north. Convert to angle from +x:
-        # +y is north, +x is east -> angle from +x equals (90 - PA_north) mod 360.
+        # astronomy PA: east of north; convert to angle from +x (east):
+        # angle_from_x = 90 - PA_north
         pa_deg = (90.0 - pa_deg) % 360.0
 
-    # Orientation method selection
     method = cfg["ORIENTATION_OVERRIDE"].get(sid, cfg["DEFAULT_METHOD"])
 
     if method == "stellar_spin":
@@ -826,10 +865,8 @@ def process_subhalo(
     else:
         normal_vec = build_normal_from_pca_v3(Xs_rel_ckpch, Ms_1e10, h)
 
-    # Build two bases, apply inc+PA
     R_base_noflip, R_base_flip, n_hat, n_hat_flip = build_R_bases(normal_vec, inc_deg, pa_deg)
 
-    # Optional debug figure
     debug_png = ""
     extra = {}
     if cfg["MAKE_FIGURES"]:
@@ -848,7 +885,6 @@ def process_subhalo(
             remove_bulk_vel=cfg["REMOVE_BULK_VEL"],
         )
     else:
-        # still compute orientation diagnostics cheaply
         J_star = stellar_spin_vector(Xs_rel_ckpch, Vs_kms, Ms_1e10, remove_bulk_vel=cfg["REMOVE_BULK_VEL"])
         inc_t, PA_t = inc_PA_from_vector(J_tot)
         inc_s, PA_s = inc_PA_from_vector(J_star)
@@ -859,12 +895,10 @@ def process_subhalo(
             "PCA_major2D_XY_deg": float(ang2_xy),
         }
 
-    # Build per-sid output dirs under OUT_BASE
     sub_out_dir = os.path.join(cfg["OUT_BASE"], f"sid{sid}")
     an_dir = os.path.join(sub_out_dir, "analysis")
     ensure_dir(an_dir)
 
-    # Write small orientation JSON
     orientation_json = os.path.join(an_dir, f"orientation_sid{sid}_snap{snap}.json")
     with open(orientation_json, "w") as f:
         json.dump({
@@ -887,14 +921,11 @@ def process_subhalo(
             "PCA_major2D_XY_deg": extra.get("PCA_major2D_XY_deg"),
         }, f, indent=2)
 
-    # Alpha grid
     alpha_step = int(cfg["ALPHA_STEP"])
     alphas = list(range(0, 360, alpha_step))
 
-    # Run specs
     run_specs = [("L3Rvir", 1.5), ("L4Rvir", 2.0)]
 
-    # Prepare summary row
     summary_row = {
         "SubhaloID": sid,
         "cutout": cutout,
@@ -918,7 +949,6 @@ def process_subhalo(
         "error": "",
     }
 
-    # Main loop: for each run length, for each alpha, for each flip, for each sightline
     for run_label, half_R in run_specs:
         out_run = os.path.join(sub_out_dir, f"rays_and_recipes_sid{sid}_snap{snap}_{run_label}")
         ensure_dir(out_run)
@@ -933,11 +963,9 @@ def process_subhalo(
                 ("noflip", R_base_noflip, n_hat),
                 ("flip",   R_base_flip,   n_hat_flip),
             ]:
-                # Rotate about the *native* axis (axis is in native coordinates before face-on mapping)
                 S_alpha = rodrigues_axis_angle(axis, math.radians(alpha))
                 R_cur = R_base @ S_alpha
 
-                # observer basis mapped into native
                 ey_obs = np.array([0.0, 1.0, 0.0])
                 ez_obs = np.array([0.0, 0.0, 1.0])
                 normal_nat = ez_obs @ R_cur
@@ -999,7 +1027,6 @@ def process_subhalo(
                         "los_z": float(L_nat[2]),
                     })
 
-        # write outputs
         rays_csv = os.path.join(out_run, f"rays_sid{sid}.csv")
         orient_csv = os.path.join(out_run, f"orient_peralpha_sid{sid}.csv")
         header_json = os.path.join(out_run, f"orient_header_sid{sid}.json")
@@ -1045,7 +1072,7 @@ def parse_args():
     p.add_argument("--cutout-root", required=True, help="Cutout root containing out_sub_<SID>/")
     p.add_argument("--groupcat-base", required=True, help="Group catalog directory groups_099/ or chunk files directory.")
 
-    p.add_argument("--obs-csv", required=True, help="M61 observation CSV with inc/PA and rho/phi for each sightline.")
+    p.add_argument("--obs-csv", required=True, help="Obs CSV with inc/PA and rho/phi per sightline (one row per sightline).")
     p.add_argument("--matches-csv", required=True, help="Matches CSV with SubhaloIDs ranked; topN used.")
 
     p.add_argument("--no-fig", action="store_true", help="Disable debug figures to reduce runtime.")
@@ -1058,7 +1085,6 @@ def parse_args():
     p.add_argument("--pa-from-north", action="store_true",
                    help="If PA in obs CSV is east-of-north, convert to angle from +x.")
 
-    # Override file for stellar spin usage
     p.add_argument("--stellar-spin-override", default="",
                    help="Optional text file with one SubhaloID per line to use stellar spin.")
     return p.parse_args()
@@ -1111,7 +1137,6 @@ def main():
 
         "PA_FROM_NORTH": bool(args.pa_from_north),
 
-        # figure settings (only used if MAKE_FIGURES)
         "FIG_EXTENT_KPC_H": 80.0,
         "FIG_NBIN": 1200,
         "FIG_CMAP": "jet",
