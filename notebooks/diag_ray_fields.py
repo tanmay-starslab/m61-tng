@@ -50,29 +50,32 @@ for f in list(ray.field_list)[:40]:
 ad = ray.all_data()
 
 def try_field(f):
+    f_str = str(f)
     try:
         a = ad[f]
-        v = a.to_value() if hasattr(a, "to_value") else np.asarray(a)
-        print(f"[OK] {f:>18}  shape={v.shape}  dtype={v.dtype}  units={getattr(a,'units','')}")
+        # coerce to numpy without triggering yt machinery beyond data fetch
+        v = np.asarray(a)
+        units = str(getattr(a, "units", ""))
+        print(f"[OK]  {f_str:<28} shape={v.shape} dtype={v.dtype} units={units}")
         if v.size:
-            print(f"     min={np.nanmin(v):.3e}  max={np.nanmax(v):.3e}")
+            print(f"      min={np.nanmin(v):.6e}  max={np.nanmax(v):.6e}")
         return True
     except Exception as e:
-        print(f"[FAIL] {f:>18}  -> {type(e).__name__}: {e}")
+        print(f"[FAIL] {f_str:<28} -> {type(e).__name__}: {e}")
         return False
 
 print("\n[TEST coordinate-like fields via all_data()]")
 for f in [
-    ("gas","x"), ("index","x"), ("all","x"),
-    ("gas","y"), ("index","y"), ("all","y"),
-    ("gas","z"), ("index","z"), ("all","z"),
+    ("gas","x"), ("all","x"), ("grid","x"),
+    ("gas","y"), ("all","y"), ("grid","y"),
+    ("gas","z"), ("all","z"), ("grid","z"),
 ]:
     try_field(f)
 
 print("\n[TEST dl-like fields via all_data()]")
 for f in [
-    ("gas","dl"), ("index","dl"), ("all","dl"),
-    ("gas","segment_length"), ("index","segment_length"),
+    ("gas","dl"), ("all","dl"), ("grid","dl"),
+    ("gas","l"),  ("all","l"),  ("grid","l"),
 ]:
     try_field(f)
 
