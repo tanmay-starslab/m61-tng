@@ -21,12 +21,10 @@ Key knobs for sanity checks:
   - max_rays: hard cap number of rows processed
   - make_plots: skip matplotlib entirely if False
 
-Fixes vs your current version:
-  1) yt ambiguity error "field name 'x' is ambiguous" fixed by always using explicit tuples:
-     ("index","x"), ("index","y"), ("index","z"), ("index","dl")
-  2) robust metallicity aliasing for TNG cutouts: defines ("gas","metallicity") if missing
-     by mapping to ("gas","GFM_Metallicity") when available.
-  3) add_ion_fields is derived from cfg.lines (ions needed), not hardcoded.
+HARDENING FIXES:
+  - Never access ambiguous ray coordinate fields without explicit (ftype,fname)
+  - Robust fallback for dl/x/y/z field types in ray dataset
+  - Robust metallicity aliasing for TNG cutouts: defines ("gas","metallicity") if missing
 """
 
 import os
@@ -35,7 +33,7 @@ import time
 import argparse
 import traceback
 from dataclasses import dataclass, asdict
-from typing import Optional, List, Sequence
+from typing import Optional, List, Sequence, Tuple
 
 import numpy as np
 import pandas as pd
@@ -87,12 +85,11 @@ class SpectraConfig:
             self.zooms_A = [25.0, 10.0, 5.0]
 
 
-# Backward-compat alias (your wrapper was importing RunConfig earlier)
 RunConfig = SpectraConfig
 
 
 # -------------------------
-# Dataset preparation
+# Small utilities
 # -------------------------
 
 def ensure_dir(p: str) -> None:
@@ -103,16 +100,30 @@ def _field_exists(ds, f):
     try:
         return (f in ds.field_list) or (f in ds.derived_field_list)
     except Exception:
-        # fallback for older yt
         try:
             return f in ds.field_list
         except Exception:
             return False
 
 
+def _pick_field(ray, fname: str, preferred_ftypes: Sequence[str]) -> Tuple[str, str]:
+    """
+    Pick the first existing (ftype,fname) on the ray dataset.
+
+    This avoids yt ambiguity ("x" exists in multiple ftypes) AND avoids picking a
+    wrong-dimensionality coordinate-like field by trying ftypes in a controlled order.
+    """
+    ds = ray.ds
+    for ft in preferred_ftypes:
+        f = (ft, fname)
+        if _field_exists(ds, f):
+            return f
+    raise KeyError(f"Could not find any of {[(ft, fname) for ft in preferred_ftypes]} in ray dataset.")
+
+
 def ensure_metallicity_field(ds) -> None:
     """
-    Trident's metal ion fields commonly expect ("gas","metallicity").
+    Trident metal ions commonly expect ("gas","metallicity").
     TNG cutouts frequently store metallicity as ("gas","GFM_Metallicity").
     If ("gas","metallicity") is missing, define it as an alias.
     """
@@ -121,11 +132,8 @@ def ensure_metallicity_field(ds) -> None:
 
     candidates = [
         ("gas", "GFM_Metallicity"),
-        ("gas", "GFM_Metals"),            # less likely, but harmless to try
-        ("gas", "Metallicity"),           # generic
-        ("gas", "metallicity"),           # in case yt lists it differently
+        ("gas", "Metallicity"),
     ]
-
     src = None
     for c in candidates:
         if _field_exists(ds, c):
@@ -133,7 +141,6 @@ def ensure_metallicity_field(ds) -> None:
             break
 
     if src is None:
-        # If you only do H I lines, this is fine; for metal ions, Trident will fail later anyway.
         return
 
     def _metallicity_alias(field, data):
@@ -149,19 +156,12 @@ def ensure_metallicity_field(ds) -> None:
 
 
 def ions_from_lines(lines: Sequence[str]) -> List[str]:
-    """
-    Convert Trident line strings like "H I 1216" into ion strings like "H I".
-    Assumes last token is wavelength; keeps first 2 tokens as the ion name.
-    """
     ions = []
     for s in lines:
         toks = str(s).strip().split()
         if len(toks) >= 2:
-            ion = f"{toks[0]} {toks[1]}"
-            ions.append(ion)
-    # unique, stable order
-    out = []
-    seen = set()
+            ions.append(f"{toks[0]} {toks[1]}")
+    out, seen = [], set()
     for x in ions:
         if x not in seen:
             out.append(x)
@@ -170,10 +170,6 @@ def ions_from_lines(lines: Sequence[str]) -> List[str]:
 
 
 def add_ions(ds, ions: Sequence[str]) -> None:
-    """
-    Add needed ion fields to the dataset.
-    Safe to call multiple times.
-    """
     if ions:
         trident.add_ion_fields(ds, ions=list(ions))
 
@@ -207,24 +203,31 @@ def build_spectrum(ray, lines, instr="COS-G130M"):
 def compute_columns(ray):
     """
     Simple LOS integrals for sanity checks.
-    Uses explicit index-field tuples to avoid yt ambiguity errors.
+    HARDENED: chooses dl field robustly and never raises.
     """
     cols = {}
 
-    # Path length (code_length sum) for sanity
-    dl = np.asarray(ray.r[("index", "dl")]).astype(float)
-    cols["_dl_kind"] = "ray.r[('index','dl')]"
-    cols["_sum_dl_code"] = float(np.nansum(dl))
+    # Prefer index dl, but allow fallback.
+    try:
+        dl_field = _pick_field(ray, "dl", preferred_ftypes=("index", "all", "gas", "grid"))
+        dl = ray.r[dl_field]
+        cols["_dl_field"] = str(dl_field)
+        cols["_sum_dl_code"] = float(np.nansum(np.asarray(dl).astype(float)))
+    except Exception:
+        cols["_dl_field"] = "NA"
+        cols["_sum_dl_code"] = np.nan
+        dl = None
 
     def _col_number_density(field_tuple):
         try:
-            nd = ray.r[field_tuple]               # 1/cm^3
-            dl_cm = ray.r[("index", "dl")].to("cm")
+            nd = ray.r[field_tuple]
+            if dl is None:
+                return np.nan
+            dl_cm = dl.to("cm")
             return float(np.nansum((nd * dl_cm)).to("cm**-2").value)
         except Exception:
             return np.nan
 
-    # Common defaults; if a field doesn't exist, returns NaN (fine)
     cols["N_HI_cm2"]    = _col_number_density(("gas", "H_p0_number_density"))
     cols["N_CII_cm2"]   = _col_number_density(("gas", "C_p1_number_density"))
     cols["N_SiIII_cm2"] = _col_number_density(("gas", "Si_p2_number_density"))
@@ -235,11 +238,9 @@ def compute_columns(ray):
 def save_spectrum_pngs(spec, out_dir, tag, zooms_A, zoom_half_A, make_plots: bool):
     if not make_plots:
         return
-
     os.environ.setdefault("MPLBACKEND", "Agg")
-    import matplotlib.pyplot as plt  # local import to avoid dependency when plotting disabled
+    import matplotlib.pyplot as plt
 
-    # Full spectrum plot
     fig = plt.figure()
     ax = fig.add_subplot(111)
     ax.plot(spec.lambda_field, spec.flux_field)
@@ -249,7 +250,6 @@ def save_spectrum_pngs(spec, out_dir, tag, zooms_A, zoom_half_A, make_plots: boo
     fig.savefig(os.path.join(out_dir, f"{tag}_full.png"), dpi=120)
     plt.close(fig)
 
-    # Zoomed plots around approximate centers (zooms_A is user-provided list)
     for z in zooms_A:
         fig = plt.figure()
         ax = fig.add_subplot(111)
@@ -282,7 +282,6 @@ def is_valid_h5(path):
 
 
 def _write_ray_pack_into_group(g, meta, ray, spec, cols):
-    # metadata
     mg = g.create_group("meta")
     for k, v in meta.items():
         try:
@@ -290,7 +289,6 @@ def _write_ray_pack_into_group(g, meta, ray, spec, cols):
         except TypeError:
             mg.attrs[k] = json.dumps(v)
 
-    # columns
     cg = g.create_group("columns")
     for k, v in cols.items():
         try:
@@ -298,14 +296,20 @@ def _write_ray_pack_into_group(g, meta, ray, spec, cols):
         except TypeError:
             cg.attrs[k] = json.dumps(v)
 
-    # ray fields (explicit tuples to avoid ambiguity)
-    rg = g.create_group("ray")
-    rg.create_dataset("dl_code", data=np.asarray(ray.r[("index", "dl")]).astype(float))
-    rg.create_dataset("x_code",  data=np.asarray(ray.r[("index", "x")]).astype(float))
-    rg.create_dataset("y_code",  data=np.asarray(ray.r[("index", "y")]).astype(float))
-    rg.create_dataset("z_code",  data=np.asarray(ray.r[("index", "z")]).astype(float))
+    # HARDENED: pick coordinate/dl fields safely, never ambiguous.
+    # Prefer index, then all, then gas, then grid.
+    pref = ("index", "all", "gas", "grid")
+    dl_f = _pick_field(ray, "dl", pref)
+    x_f  = _pick_field(ray, "x",  pref)
+    y_f  = _pick_field(ray, "y",  pref)
+    z_f  = _pick_field(ray, "z",  pref)
 
-    # spectrum arrays
+    rg = g.create_group("ray")
+    rg.create_dataset("dl_code", data=np.asarray(ray.r[dl_f]).astype(float))
+    rg.create_dataset("x_code",  data=np.asarray(ray.r[x_f]).astype(float))
+    rg.create_dataset("y_code",  data=np.asarray(ray.r[y_f]).astype(float))
+    rg.create_dataset("z_code",  data=np.asarray(ray.r[z_f]).astype(float))
+
     sg = g.create_group("spectrum")
     sg.create_dataset("lambda_A", data=np.asarray(spec.lambda_field).astype(float))
     sg.create_dataset("flux",     data=np.asarray(spec.flux_field).astype(float))
@@ -375,17 +379,13 @@ def process_run_for_sid(ds, sid, snap, run_label, paths: JobPaths, cfg: SpectraC
     combined_dir = os.path.join(job_root, "combined")
     combined_h5  = os.path.join(combined_dir, f"all_rays_{run_label}.h5")
 
-    ensure_dir(job_root)
-    ensure_dir(rays_dir)
-    ensure_dir(logs_dir)
-    ensure_dir(combined_dir)
+    ensure_dir(job_root); ensure_dir(rays_dir); ensure_dir(logs_dir); ensure_dir(combined_dir)
 
     if not os.path.isfile(rays_csv):
         raise FileNotFoundError(f"Missing rays CSV: {rays_csv}")
 
     df = pd.read_csv(rays_csv)
 
-    # filters
     if params.filter_mode is not None:
         df = df[df["mode"].astype(str).str.lower() == params.filter_mode.lower()]
 
@@ -434,7 +434,7 @@ def process_run_for_sid(ds, sid, snap, run_label, paths: JobPaths, cfg: SpectraC
 
             rho_kpc = float(row.get("rho_kpc", np.nan))
             phi_deg = float(row.get("phi_deg", np.nan))
-            inc_deg = float(row.get("obs_inc_deg", np.nan))  # orient_m61 key
+            inc_deg = float(row.get("obs_inc_deg", np.nan))
             rvir_kpc = float(row.get("Rvir_kpc", np.nan))
             total_len_Rvir = float(row.get("total_len_Rvir", np.nan))
             sightline_id = str(row.get("sightline_id", "SL"))
@@ -447,7 +447,6 @@ def process_run_for_sid(ds, sid, snap, run_label, paths: JobPaths, cfg: SpectraC
             if params.verbose:
                 print(f"[{run_label}] ({i+1}/{len(df)}) {tag}")
 
-            # fresh scratch outputs for each ray
             for p in (rayfile, trajfile):
                 try:
                     os.remove(p)
@@ -462,7 +461,7 @@ def process_run_for_sid(ds, sid, snap, run_label, paths: JobPaths, cfg: SpectraC
             save_spectrum_pngs(
                 spec, out_dir, tag=tag,
                 zooms_A=cfg.zooms_A, zoom_half_A=cfg.zoom_half_A,
-                make_plots=cfg.make_plots,
+                make_plots=cfg.make_plots
             )
 
             meta_save = dict(
@@ -515,6 +514,7 @@ def process_run_for_sid(ds, sid, snap, run_label, paths: JobPaths, cfg: SpectraC
             print(msg)
             with open(os.path.join(logs_dir, "errors.txt"), "a") as f:
                 f.write(msg + "\n")
+                f.write(traceback.format_exc() + "\n")
 
     if summary_rows:
         master_csv = os.path.join(job_root, "summary_all_rays.csv")
@@ -537,10 +537,8 @@ def run_all_runs_for_sid(paths: JobPaths, params: JobParams, cfg: SpectraConfig)
 
     ds = yt.load(paths.cutout_h5)
 
-    # For metal ions: ensure metallicity alias exists where Trident expects it
     ensure_metallicity_field(ds)
 
-    # Add only ions needed for the requested lines (prevents unnecessary failures)
     ions_needed = ions_from_lines(cfg.lines)
     add_ions(ds, ions_needed)
 
