@@ -22,9 +22,11 @@ Key knobs for sanity checks:
   - make_plots: skip matplotlib entirely if False
 
 HARDENING FIXES:
-  - Never access ambiguous ray coordinate fields without explicit (ftype,fname)
-  - Robust fallback for dl/x/y/z field types in ray dataset
-  - Robust metallicity aliasing for TNG cutouts: defines ("gas","metallicity") if missing
+  - Correctly handle that trident.make_simple_ray returns a *dataset* (YTDataLightRayDataset),
+    which does NOT have .ds. Never assume ray.ds exists.
+  - Never access ambiguous fields like "x" without explicit (ftype,fname).
+  - Robust fallback field picking for dl/x/y/z across likely ftypes.
+  - Optional metallicity aliasing for TNG cutouts: defines ("gas","metallicity") if missing.
 """
 
 import os
@@ -82,7 +84,9 @@ class SpectraConfig:
         if self.lines is None:
             self.lines = ["H I 1216", "C II 1335", "Si III 1206"]
         if self.zooms_A is None:
-            self.zooms_A = [25.0, 10.0, 5.0]
+            # These are just "example zoom centers". If you want them to auto-parse
+            # from cfg.lines, do that upstream; plotting is optional anyway.
+            self.zooms_A = [1215.67, 1334.532, 1206.50]
 
 
 RunConfig = SpectraConfig
@@ -96,7 +100,17 @@ def ensure_dir(p: str) -> None:
     os.makedirs(p, exist_ok=True)
 
 
-def _field_exists(ds, f):
+def _ray_dataset(ray):
+    """
+    trident.make_simple_ray returns a *dataset* (e.g. YTDataLightRayDataset),
+    which does not have .ds. Data containers have .ds.
+
+    This helper always returns the dataset-like object to query field lists.
+    """
+    return getattr(ray, "ds", ray)
+
+
+def _field_exists(ds, f) -> bool:
     try:
         return (f in ds.field_list) or (f in ds.derived_field_list)
     except Exception:
@@ -108,24 +122,27 @@ def _field_exists(ds, f):
 
 def _pick_field(ray, fname: str, preferred_ftypes: Sequence[str]) -> Tuple[str, str]:
     """
-    Pick the first existing (ftype,fname) on the ray dataset.
+    Pick the first existing (ftype,fname) on the *ray dataset*.
 
-    This avoids yt ambiguity ("x" exists in multiple ftypes) AND avoids picking a
-    wrong-dimensionality coordinate-like field by trying ftypes in a controlled order.
+    Avoids yt ambiguity ("x" exists in multiple ftypes) AND keeps ftype order controlled.
     """
-    ds = ray.ds
+    rds = _ray_dataset(ray)
     for ft in preferred_ftypes:
         f = (ft, fname)
-        if _field_exists(ds, f):
+        if _field_exists(rds, f):
             return f
-    raise KeyError(f"Could not find any of {[(ft, fname) for ft in preferred_ftypes]} in ray dataset.")
+    raise KeyError(
+        f"Could not find any of {[(ft, fname) for ft in preferred_ftypes]} "
+        f"in ray dataset. Available ftypes include: "
+        f"{sorted(set(ft for ft, _ in getattr(rds, 'field_list', [])))}"
+    )
 
 
 def ensure_metallicity_field(ds) -> None:
     """
     Trident metal ions commonly expect ("gas","metallicity").
-    TNG cutouts frequently store metallicity as ("gas","GFM_Metallicity").
-    If ("gas","metallicity") is missing, define it as an alias.
+    TNG cutouts often store metallicity as ("gas","GFM_Metallicity").
+    If ("gas","metallicity") is missing, define it as an alias (dimensionless).
     """
     if _field_exists(ds, ("gas", "metallicity")):
         return
@@ -139,7 +156,6 @@ def ensure_metallicity_field(ds) -> None:
         if _field_exists(ds, c):
             src = c
             break
-
     if src is None:
         return
 
@@ -156,6 +172,9 @@ def ensure_metallicity_field(ds) -> None:
 
 
 def ions_from_lines(lines: Sequence[str]) -> List[str]:
+    """
+    Convert ["H I 1216", "C II 1335"] -> ["H I", "C II"] unique, ordered.
+    """
     ions = []
     for s in lines:
         toks = str(s).strip().split()
@@ -170,8 +189,10 @@ def ions_from_lines(lines: Sequence[str]) -> List[str]:
 
 
 def add_ions(ds, ions: Sequence[str]) -> None:
-    if ions:
-        trident.add_ion_fields(ds, ions=list(ions))
+    if not ions:
+        return
+    # Trident is usually safe to call multiple times; it will warn if already exists.
+    trident.add_ion_fields(ds, ions=list(ions))
 
 
 # -------------------------
@@ -181,6 +202,7 @@ def add_ions(ds, ions: Sequence[str]) -> None:
 def make_ray(ds, p0_ckpch_abs, p1_ckpch_abs, data_filename, solution_filename):
     """
     p0/p1 are absolute box coordinates in code_length units for the loaded cutout.
+    Use ds.arr to guarantee 3-vector with units.
     """
     p0 = ds.arr(np.asarray(p0_ckpch_abs, float), "code_length")
     p1 = ds.arr(np.asarray(p1_ckpch_abs, float), "code_length")
@@ -203,26 +225,32 @@ def build_spectrum(ray, lines, instr="COS-G130M"):
 def compute_columns(ray):
     """
     Simple LOS integrals for sanity checks.
-    HARDENED: chooses dl field robustly and never raises.
+    HARDENED:
+      - chooses dl field robustly across common ftypes (including 'ray')
+      - never assumes ray.ds exists
+      - never raises; returns NaNs on failure
     """
     cols = {}
 
-    # Prefer index dl, but allow fallback.
+    # These are the common ftypes where dl/x/y/z may live for light-ray datasets.
+    pref = ("index", "ray", "all", "gas", "grid")
+
+    # Prefer dl from these ftypes; if missing, we cannot integrate.
+    dl = None
     try:
-        dl_field = _pick_field(ray, "dl", preferred_ftypes=("index", "all", "gas", "grid"))
+        dl_field = _pick_field(ray, "dl", preferred_ftypes=pref)
         dl = ray.r[dl_field]
         cols["_dl_field"] = str(dl_field)
         cols["_sum_dl_code"] = float(np.nansum(np.asarray(dl).astype(float)))
     except Exception:
         cols["_dl_field"] = "NA"
         cols["_sum_dl_code"] = np.nan
-        dl = None
 
     def _col_number_density(field_tuple):
         try:
-            nd = ray.r[field_tuple]
             if dl is None:
                 return np.nan
+            nd = ray.r[field_tuple]
             dl_cm = dl.to("cm")
             return float(np.nansum((nd * dl_cm)).to("cm**-2").value)
         except Exception:
@@ -257,8 +285,8 @@ def save_spectrum_pngs(spec, out_dir, tag, zooms_A, zoom_half_A, make_plots: boo
         ax.set_xlim(z - zoom_half_A, z + zoom_half_A)
         ax.set_xlabel(r"Wavelength [$\AA$]")
         ax.set_ylabel("Flux")
-        ax.set_title(f"{tag} | zoom {z:.1f}A")
-        fig.savefig(os.path.join(out_dir, f"{tag}_zoom_{z:.1f}.png"), dpi=120)
+        ax.set_title(f"{tag} | zoom {z:.2f}A")
+        fig.savefig(os.path.join(out_dir, f"{tag}_zoom_{z:.2f}.png"), dpi=120)
         plt.close(fig)
 
 
@@ -297,18 +325,29 @@ def _write_ray_pack_into_group(g, meta, ray, spec, cols):
             cg.attrs[k] = json.dumps(v)
 
     # HARDENED: pick coordinate/dl fields safely, never ambiguous.
-    # Prefer index, then all, then gas, then grid.
-    pref = ("index", "all", "gas", "grid")
-    dl_f = _pick_field(ray, "dl", pref)
-    x_f  = _pick_field(ray, "x",  pref)
-    y_f  = _pick_field(ray, "y",  pref)
-    z_f  = _pick_field(ray, "z",  pref)
+    pref = ("index", "ray", "all", "gas", "grid")
 
     rg = g.create_group("ray")
-    rg.create_dataset("dl_code", data=np.asarray(ray.r[dl_f]).astype(float))
-    rg.create_dataset("x_code",  data=np.asarray(ray.r[x_f]).astype(float))
-    rg.create_dataset("y_code",  data=np.asarray(ray.r[y_f]).astype(float))
-    rg.create_dataset("z_code",  data=np.asarray(ray.r[z_f]).astype(float))
+
+    # dl may not exist; write if possible
+    try:
+        dl_f = _pick_field(ray, "dl", pref)
+        rg.create_dataset("dl_code", data=np.asarray(ray.r[dl_f]).astype(float))
+        rg.attrs["dl_field"] = str(dl_f)
+    except Exception:
+        rg.attrs["dl_field"] = "NA"
+
+    # x/y/z exist in many ftypes; pick consistently
+    x_f = _pick_field(ray, "x", pref)
+    y_f = _pick_field(ray, "y", pref)
+    z_f = _pick_field(ray, "z", pref)
+
+    rg.create_dataset("x_code", data=np.asarray(ray.r[x_f]).astype(float))
+    rg.create_dataset("y_code", data=np.asarray(ray.r[y_f]).astype(float))
+    rg.create_dataset("z_code", data=np.asarray(ray.r[z_f]).astype(float))
+    rg.attrs["x_field"] = str(x_f)
+    rg.attrs["y_field"] = str(y_f)
+    rg.attrs["z_field"] = str(z_f)
 
     sg = g.create_group("spectrum")
     sg.create_dataset("lambda_A", data=np.asarray(spec.lambda_field).astype(float))
@@ -412,6 +451,7 @@ def process_run_for_sid(ds, sid, snap, run_label, paths: JobPaths, cfg: SpectraC
     ray_scratch_dir = os.environ.get("SLURM_TMPDIR") or os.path.join(paths.output_base, "_tmp_trident")
     ensure_dir(ray_scratch_dir)
 
+    # NOTE: per-subhalo scratch filenames. Safe if one process per SID.
     rayfile  = os.path.join(ray_scratch_dir, f"ray_sid{sid}.h5")
     trajfile = os.path.join(ray_scratch_dir, f"traj_sid{sid}.txt")
 
@@ -429,6 +469,7 @@ def process_run_for_sid(ds, sid, snap, run_label, paths: JobPaths, cfg: SpectraC
             alpha = float(row.get("alpha_deg", np.nan))
             alpha_tag = f"{int(round(alpha))}" if np.isfinite(alpha) else "NA"
 
+            # Must be 3D
             p0 = np.array([row["p0_X_ckpch_abs"], row["p0_Y_ckpch_abs"], row["p0_Z_ckpch_abs"]], float)
             p1 = np.array([row["p1_X_ckpch_abs"], row["p1_Y_ckpch_abs"], row["p1_Z_ckpch_abs"]], float)
 
@@ -447,6 +488,7 @@ def process_run_for_sid(ds, sid, snap, run_label, paths: JobPaths, cfg: SpectraC
             if params.verbose:
                 print(f"[{run_label}] ({i+1}/{len(df)}) {tag}")
 
+            # Ensure fresh write
             for p in (rayfile, trajfile):
                 try:
                     os.remove(p)
