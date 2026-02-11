@@ -6,18 +6,28 @@ spectra_batch_module.py
 
 Hardened Trident spectra generator for rays precomputed by orient_m61.py.
 
-Key fix for your current failure:
-  - In these TNG cutouts, metallicity is NOT ('gas','GFM_Metallicity').
-    It is usually ('PartType0','GFM_Metallicity') (gas particles) and yt
-    does not expose a 'gas' field for it.
-  - Trident often expects ('gas','metallicity') to exist.
-  - Therefore we create a proxy ('gas','metallicity') that forwards to
-    ('PartType0','GFM_Metallicity') with sampling_type='particle'.
+Primary goals:
+  1) NEVER crash the whole run because of one ray.
+  2) ALWAYS write a spectrum-only HDF5 when spectrum generation succeeds.
+  3) Avoid yt operations that trigger "ParticleContainer is an unindexed type" errors:
+     - no off-axis plots
+     - no ires/icoords/fcoords/fwidth
+     - no ambiguous field access ("x" without (ftype,fname))
+  4) Make Trident spectrum generation robust for TNG cutouts by:
+     - ensuring ("gas","metallicity") exists (aliasing from GFM_Metallicity if needed)
+     - forcing required ion number-density fields to be WRITTEN into the ray HDF5
+       via trident.make_simple_ray(..., fields=[...])
 
-Other hardening goals preserved:
-  1) One bad ray never kills the run.
-  2) Always write a spectrum-only HDF5 first when spectrum generation succeeds.
-  3) Avoid yt operations that trigger "ParticleContainer is an unindexed type".
+Expected rays CSV:
+  <ORIENT_OUT_BASE>/sid<SID>/rays_and_recipes_sid<SID>_snap<SNAP>_<RUN_LABEL>/rays_sid<SID>.csv
+
+Outputs:
+  <OUTPUT_BASE>/rays_and_spectra_sid<SID>_snap<SNAP>_<RUN_LABEL>/
+    spectra_h5/                  <-- spectrum-only, written first (always)
+    rays/                        <-- optional per-ray bundles
+    combined/                    <-- optional combined file (best effort)
+    logs/errors.txt
+    summary_all_rays.csv
 """
 
 import os
@@ -26,7 +36,7 @@ import time
 import argparse
 import traceback
 from dataclasses import dataclass, asdict
-from typing import Optional, List, Sequence, Tuple, Any
+from typing import Optional, List, Sequence, Tuple, Any, Dict
 
 import numpy as np
 import pandas as pd
@@ -64,8 +74,9 @@ class JobParams:
 
 
 # IMPORTANT:
-# - run_spectra_one_sid.py calls SpectraConfig(..., zoom_half_A=...)
-# - accept/ignore unknown kwargs to avoid mismatches.
+# - run_spectra_one_sid.py in your tree is calling SpectraConfig(..., zoom_half_A=...)
+# - This class must accept that keyword.
+# - Also accept/ignore unknown kwargs to avoid future mismatches.
 @dataclass(init=False)
 class SpectraConfig:
     def __init__(
@@ -94,6 +105,7 @@ def ensure_dir(p: str) -> None:
 
 
 def _ray_dataset(ray):
+    # make_simple_ray returns a dataset-like object (YTDataLightRayDataset).
     return getattr(ray, "ds", ray)
 
 
@@ -119,83 +131,42 @@ def _pick_field(ray, fname: str, preferred_ftypes: Sequence[str]) -> Tuple[str, 
     raise KeyError(f"Missing field {fname}. Tried: {[(ft, fname) for ft in preferred_ftypes]}")
 
 
-# -------------------------
-# Metallicity handling (FIXED)
-# -------------------------
-
 def ensure_metallicity_field(ds) -> None:
     """
-    Ensure Trident can find metallicity.
+    Trident typically expects ("gas","metallicity") to exist.
+    TNG cutouts often store metallicity as ("gas","GFM_Metallicity") OR as particle fields.
 
-    Reality for your cutout (based on error):
-        missing: ('gas','GFM_Metallicity')
-        present: ('PartType0','GFM_Metallicity')
-
-    Trident often looks for:
-        ('gas','metallicity')
-
-    Strategy:
-      1) If ('gas','metallicity') exists: done.
-      2) If ('gas','GFM_Metallicity') exists: alias it to ('gas','metallicity') with sampling_type='cell'.
-      3) If ('PartType0','GFM_Metallicity') exists: create proxy ('gas','metallicity') forwarding to it,
-         but sampling_type='particle' (critical).
+    If the cutout has a gas/cell metallicity field with another name, alias it to ("gas","metallicity").
     """
     if _field_exists(ds, ("gas", "metallicity")):
         return
 
-    # Case: true gas field exists (cell-based)
-    if _field_exists(ds, ("gas", "GFM_Metallicity")):
-        src = ("gas", "GFM_Metallicity")
-
-        def _metallicity_alias(field, data):
-            return data[src]
-
-        ds.add_field(
-            ("gas", "metallicity"),
-            function=_metallicity_alias,
-            sampling_type="cell",
-            units="dimensionless",
-            force_override=True,
-        )
+    # Common candidates on grid/cell data.
+    candidates = [("gas", "GFM_Metallicity"), ("gas", "Metallicity")]
+    src = None
+    for c in candidates:
+        if _field_exists(ds, c):
+            src = c
+            break
+    if src is None:
         return
 
-    if _field_exists(ds, ("gas", "Metallicity")):
-        src = ("gas", "Metallicity")
+    def _metallicity_alias(field, data):
+        return data[src]
 
-        def _metallicity_alias(field, data):
-            return data[src]
-
-        ds.add_field(
-            ("gas", "metallicity"),
-            function=_metallicity_alias,
-            sampling_type="cell",
-            units="dimensionless",
-            force_override=True,
-        )
-        return
-
-    # Case: gas is represented as particles (TNG cutout PartType0)
-    if _field_exists(ds, ("PartType0", "GFM_Metallicity")):
-        src = ("PartType0", "GFM_Metallicity")
-
-        def _gas_metallicity_proxy(field, data):
-            return data[src]
-
-        # IMPORTANT: sampling_type must be "particle" here.
-        ds.add_field(
-            ("gas", "metallicity"),
-            function=_gas_metallicity_proxy,
-            sampling_type="particle",
-            units="dimensionless",
-            force_override=True,
-        )
-        return
-
-    # If none found, do nothing (Trident will fail later with a clear message)
-    return
+    ds.add_field(
+        ("gas", "metallicity"),
+        function=_metallicity_alias,
+        sampling_type="cell",
+        units="dimensionless",
+        force_override=True,
+    )
 
 
 def ions_from_lines(lines: Sequence[str]) -> List[str]:
+    """
+    Convert line strings like "Si II 1260" -> "Si II".
+    """
     ions = []
     for s in lines:
         toks = str(s).strip().split()
@@ -209,6 +180,28 @@ def ions_from_lines(lines: Sequence[str]) -> List[str]:
     return out
 
 
+def ion_to_trident_nd_field(ion: str) -> Optional[Tuple[str, str]]:
+    """
+    Map an ion like 'Si II' to Trident's number-density field name.
+    Extend this mapping as needed for your use-case.
+    """
+    ion = ion.strip()
+    mapping: Dict[str, Tuple[str, str]] = {
+        "H I": ("gas", "H_p0_number_density"),
+        "C II": ("gas", "C_p1_number_density"),
+        "C III": ("gas", "C_p2_number_density"),
+        "C IV": ("gas", "C_p3_number_density"),
+        "Si II": ("gas", "Si_p1_number_density"),
+        "Si III": ("gas", "Si_p2_number_density"),
+        "Si IV": ("gas", "Si_p3_number_density"),
+        "O VI": ("gas", "O_p5_number_density"),
+        "N V": ("gas", "N_p4_number_density"),
+        "Mg II": ("gas", "Mg_p1_number_density"),
+        "Fe II": ("gas", "Fe_p1_number_density"),
+    }
+    return mapping.get(ion, None)
+
+
 def add_ions(ds, ions: Sequence[str]) -> None:
     if not ions:
         return
@@ -219,20 +212,42 @@ def add_ions(ds, ions: Sequence[str]) -> None:
 # Ray + spectrum helpers
 # -------------------------
 
-def make_ray(ds, p0_ckpch_abs, p1_ckpch_abs, data_filename, solution_filename):
+def make_ray(ds, p0_ckpch_abs, p1_ckpch_abs, data_filename, solution_filename, ions_needed: Optional[Sequence[str]] = None):
     """
-    Do NOT force a 'ray_fields' list that includes ('gas','GFM_Metallicity').
+    Build a simple ray and FORCE writing required fields into the ray HDF5.
 
-    Reason: in your dataset that field does not exist as gas, it exists as PartType0.
-    Forcing it causes immediate YTFieldNotFound.
+    Key point:
+      SpectrumGenerator.make_spectrum(ray, ...) will later operate on the ray dataset
+      loaded from the ray HDF5. That dataset must contain the required ion number-density
+      field(s), or Trident will raise YTFieldNotFound.
+
+    Therefore, we explicitly include any required ion number-density fields in `fields=...`.
     """
     p0 = ds.arr(np.asarray(p0_ckpch_abs, float), "code_length")
     p1 = ds.arr(np.asarray(p1_ckpch_abs, float), "code_length")
+
+    # Ensure metallicity exists on the parent dataset before we sample it.
+    ensure_metallicity_field(ds)
+
+    ray_fields = [
+        ("gas", "density"),
+        ("gas", "temperature"),
+        ("gas", "metallicity"),
+        ("gas", "H_number_density"),
+    ]
+
+    if ions_needed:
+        for ion in ions_needed:
+            f = ion_to_trident_nd_field(ion)
+            if f is not None and f not in ray_fields:
+                ray_fields.append(f)
 
     return trident.make_simple_ray(
         ds,
         start_position=p0,
         end_position=p1,
+        fields=ray_fields,            # IMPORTANT: force-write required fields
+        ftype="gas",
         data_filename=data_filename,
         solution_filename=solution_filename,
     )
@@ -271,11 +286,10 @@ def compute_columns(ray):
         except Exception:
             return np.nan
 
-    # These ion number-density fields may or may not exist depending on Trident/yt path;
-    # keep best-effort behavior.
     cols["N_HI_cm2"]    = _col(("gas", "H_p0_number_density"))
     cols["N_CII_cm2"]   = _col(("gas", "C_p1_number_density"))
     cols["N_SiIII_cm2"] = _col(("gas", "Si_p2_number_density"))
+    cols["N_SiII_cm2"]  = _col(("gas", "Si_p1_number_density"))
     return cols
 
 
@@ -301,7 +315,7 @@ def is_valid_h5(path):
 def save_spectrum_only_h5(path, meta: dict, spec) -> None:
     """
     Minimal, robust output: lambda + flux + tau if present.
-    Written FIRST.
+    Written FIRST, before any bundle/combined work.
     """
     def _w(f):
         mg = f.create_group("meta")
@@ -343,6 +357,7 @@ def _write_bundle_into_group(g, meta, ray, spec, cols):
     pref = ("index", "ray", "all", "gas", "grid")
     rg = g.create_group("ray")
 
+    # dl optional
     try:
         dl_f = _pick_field(ray, "dl", pref)
         rg.create_dataset("dl_code", data=np.asarray(ray.r[dl_f]).astype(float))
@@ -350,6 +365,7 @@ def _write_bundle_into_group(g, meta, ray, spec, cols):
     except Exception:
         rg.attrs["dl_field"] = "NA"
 
+    # x/y/z always explicit to avoid ambiguity
     x_f = _pick_field(ray, "x", pref)
     y_f = _pick_field(ray, "y", pref)
     z_f = _pick_field(ray, "z", pref)
@@ -364,6 +380,13 @@ def _write_bundle_into_group(g, meta, ray, spec, cols):
     sg = g.create_group("spectrum")
     sg.create_dataset("lambda_A", data=np.asarray(spec.lambda_field).astype(float))
     sg.create_dataset("flux",     data=np.asarray(spec.flux_field).astype(float))
+
+    tau = getattr(spec, "tau_field", None)
+    if tau is not None:
+        try:
+            sg.create_dataset("tau", data=np.asarray(tau).astype(float))
+        except Exception:
+            pass
 
 
 def save_bundle_hdf5(path, meta, ray, spec, cols):
@@ -423,13 +446,17 @@ def process_run_for_sid(ds, sid, snap, run_label, paths: JobPaths, cfg: SpectraC
     )
 
     job_root = os.path.join(paths.output_base, f"rays_and_spectra_sid{sid}_snap{snap}_{run_label}")
-    spectra_dir  = os.path.join(job_root, "spectra_h5")
-    rays_dir     = os.path.join(job_root, "rays")
+    spectra_dir  = os.path.join(job_root, "spectra_h5")      # spectrum-only (always try)
+    rays_dir     = os.path.join(job_root, "rays")            # optional bundles
     logs_dir     = os.path.join(job_root, "logs")
     combined_dir = os.path.join(job_root, "combined")
     combined_h5  = os.path.join(combined_dir, f"all_rays_{run_label}.h5")
 
-    ensure_dir(job_root); ensure_dir(spectra_dir); ensure_dir(rays_dir); ensure_dir(logs_dir); ensure_dir(combined_dir)
+    ensure_dir(job_root)
+    ensure_dir(spectra_dir)
+    ensure_dir(rays_dir)
+    ensure_dir(logs_dir)
+    ensure_dir(combined_dir)
 
     if not os.path.isfile(rays_csv):
         raise FileNotFoundError(f"Missing rays CSV: {rays_csv}")
@@ -459,6 +486,7 @@ def process_run_for_sid(ds, sid, snap, run_label, paths: JobPaths, cfg: SpectraC
         lines=json.dumps(list(cfg.lines)),
     )
 
+    # Scratch: include pid to avoid collisions if multiple jobs run same SID.
     ray_scratch_dir = os.environ.get("SLURM_TMPDIR") or os.path.join(paths.output_base, "_tmp_trident")
     ensure_dir(ray_scratch_dir)
     pid = os.getpid()
@@ -466,6 +494,9 @@ def process_run_for_sid(ds, sid, snap, run_label, paths: JobPaths, cfg: SpectraC
     trajfile = os.path.join(ray_scratch_dir, f"traj_sid{sid}.{pid}.txt")
 
     summary_rows, errors = [], 0
+
+    # Determine required ions from line list once per run_label
+    ions_needed = ions_from_lines(cfg.lines)
 
     for j, row in df.iterrows():
         try:
@@ -478,7 +509,7 @@ def process_run_for_sid(ds, sid, snap, run_label, paths: JobPaths, cfg: SpectraC
 
             rho_kpc = float(row.get("rho_kpc", np.nan))
             phi_deg = float(row.get("phi_deg", np.nan))
-            inc_deg = float(row.get("obs_inc_deg", np.nan))
+            inc_deg = float(row.get("obs_inc_deg", row.get("inc_deg", np.nan)))
             rvir_kpc = float(row.get("Rvir_kpc", np.nan))
             total_len_Rvir = float(row.get("total_len_Rvir", np.nan))
             sightline_id = str(row.get("sightline_id", "SL"))
@@ -488,20 +519,21 @@ def process_run_for_sid(ds, sid, snap, run_label, paths: JobPaths, cfg: SpectraC
             if params.verbose:
                 print(f"[{run_label}] ({len(summary_rows)+errors+1}/{len(df)}) {tag}")
 
+            # clean scratch
             for p in (rayfile, trajfile):
                 try:
                     os.remove(p)
                 except FileNotFoundError:
                     pass
 
-            ray = make_ray(ds, p0, p1, data_filename=rayfile, solution_filename=trajfile)
+            # Make the ray and FORCE-writing needed ion fields into ray HDF5
+            ray = make_ray(ds, p0, p1, data_filename=rayfile, solution_filename=trajfile, ions_needed=ions_needed)
 
-            # Ensure metallicity on the *ray dataset* too.
+            # Ensure metallicity exists on the ray dataset too (harmless if already present)
             rds = _ray_dataset(ray)
             ensure_metallicity_field(rds)
 
-            # Best-effort ion fields on ray dataset
-            ions_needed = ions_from_lines(cfg.lines)
+            # Best-effort: add ions to ray dataset context (not relied upon, since we force-wrote fields)
             try:
                 add_ions(rds, ions_needed)
             except Exception:
@@ -509,6 +541,7 @@ def process_run_for_sid(ds, sid, snap, run_label, paths: JobPaths, cfg: SpectraC
 
             cols = compute_columns(ray)
 
+            # Generate spectrum (critical)
             sg = build_spectrum(ray, cfg.lines, instr=cfg.instrument)
 
             meta = dict(
@@ -529,9 +562,11 @@ def process_run_for_sid(ds, sid, snap, run_label, paths: JobPaths, cfg: SpectraC
                 instrument=str(cfg.instrument),
             )
 
+            # 1) ALWAYS write spectrum-only first
             spec_path = os.path.join(spectra_dir, f"{tag}_spectrum.h5")
             save_spectrum_only_h5(spec_path, meta, sg)
 
+            # 2) Best-effort bundle + combined (must not break the run)
             out_dir = os.path.join(rays_dir, f"sightline={sightline_id}", f"mode={mode}", f"alpha={alpha_tag}")
             ensure_dir(out_dir)
 
@@ -571,6 +606,7 @@ def process_run_for_sid(ds, sid, snap, run_label, paths: JobPaths, cfg: SpectraC
                 N_HI_cm2=cols.get("N_HI_cm2"),
                 N_CII_cm2=cols.get("N_CII_cm2"),
                 N_SiIII_cm2=cols.get("N_SiIII_cm2"),
+                N_SiII_cm2=cols.get("N_SiII_cm2"),
             ))
 
         except Exception as e:
@@ -604,6 +640,7 @@ def run_all_runs_for_sid(paths: JobPaths, params: JobParams, cfg: SpectraConfig)
     ds = yt.load(paths.cutout_h5)
     ensure_metallicity_field(ds)
 
+    # Best-effort: add ions on the parent dataset context too
     ions_needed = ions_from_lines(cfg.lines)
     try:
         add_ions(ds, ions_needed)
