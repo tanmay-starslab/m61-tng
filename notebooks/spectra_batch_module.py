@@ -183,14 +183,25 @@ def add_ions(ds, ions: Sequence[str]) -> None:
 def make_ray(ds, p0_ckpch_abs, p1_ckpch_abs, data_filename, solution_filename):
     p0 = ds.arr(np.asarray(p0_ckpch_abs, float), "code_length")
     p1 = ds.arr(np.asarray(p1_ckpch_abs, float), "code_length")
+
+    # Force the ray file to contain the metallicity source field.
+    # TNG usually has GFM_Metallicity, not metallicity.
+    ray_fields = [
+        ("gas", "density"),
+        ("gas", "temperature"),
+        ("gas", "GFM_Metallicity"),   # IMPORTANT
+        ("gas", "H_number_density"),  # optional but often useful
+    ]
+
     return trident.make_simple_ray(
         ds,
         start_position=p0,
         end_position=p1,
+        fields=ray_fields,            # IMPORTANT
+        ftype="gas",                  # IMPORTANT
         data_filename=data_filename,
         solution_filename=solution_filename,
     )
-
 
 def build_spectrum(ray, lines, instr="COS-G130M"):
     sg = trident.SpectrumGenerator(instr)
@@ -452,6 +463,17 @@ def process_run_for_sid(ds, sid, snap, run_label, paths: JobPaths, cfg: SpectraC
                     pass
 
             ray = make_ray(ds, p0, p1, data_filename=rayfile, solution_filename=trajfile)
+            
+            # Make sure the *ray dataset* has ("gas","metallicity") before any ion creation happens.
+            rds = _ray_dataset(ray)
+            ensure_metallicity_field(rds)
+
+            # (Optional but recommended) build needed ion fields on the ray dataset itself.
+            ions_needed = ions_from_lines(cfg.lines)
+            try:
+                add_ions(rds, ions_needed)
+            except Exception:
+                pass
 
             cols = compute_columns(ray)
 
