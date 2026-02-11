@@ -6,24 +6,18 @@ spectra_batch_module.py
 
 Hardened Trident spectra generator for rays precomputed by orient_m61.py.
 
-Primary goals:
-  1) NEVER crash the whole run because of one ray.
-  2) ALWAYS try to write a spectrum-only HDF5 when spectrum generation succeeds.
-  3) Avoid yt operations that trigger "ParticleContainer is an unindexed type" errors:
-     - no off-axis plots
-     - no ires/icoords/fcoords/fwidth
-     - no ambiguous field access ("x" without (ftype,fname))
+Key fix for your current failure:
+  - In these TNG cutouts, metallicity is NOT ('gas','GFM_Metallicity').
+    It is usually ('PartType0','GFM_Metallicity') (gas particles) and yt
+    does not expose a 'gas' field for it.
+  - Trident often expects ('gas','metallicity') to exist.
+  - Therefore we create a proxy ('gas','metallicity') that forwards to
+    ('PartType0','GFM_Metallicity') with sampling_type='particle'.
 
-Expected rays CSV:
-  <ORIENT_OUT_BASE>/sid<SID>/rays_and_recipes_sid<SID>_snap<SNAP>_<RUN_LABEL>/rays_sid<SID>.csv
-
-Outputs:
-  <OUTPUT_BASE>/rays_and_spectra_sid<SID>_snap<SNAP>_<RUN_LABEL>/
-    spectra_h5/                  <-- spectrum-only, written first
-    rays/                        <-- optional per-ray bundles
-    combined/                    <-- optional combined file (best effort)
-    logs/errors.txt
-    summary_all_rays.csv
+Other hardening goals preserved:
+  1) One bad ray never kills the run.
+  2) Always write a spectrum-only HDF5 first when spectrum generation succeeds.
+  3) Avoid yt operations that trigger "ParticleContainer is an unindexed type".
 """
 
 import os
@@ -70,9 +64,8 @@ class JobParams:
 
 
 # IMPORTANT:
-# - run_spectra_one_sid.py in your tree is calling SpectraConfig(..., zoom_half_A=...)
-# - This class must accept that keyword.
-# - Also accept/ignore unknown kwargs to avoid future mismatches.
+# - run_spectra_one_sid.py calls SpectraConfig(..., zoom_half_A=...)
+# - accept/ignore unknown kwargs to avoid mismatches.
 @dataclass(init=False)
 class SpectraConfig:
     def __init__(
@@ -101,7 +94,6 @@ def ensure_dir(p: str) -> None:
 
 
 def _ray_dataset(ray):
-    # make_simple_ray returns a dataset-like object (YTDataLightRayDataset).
     return getattr(ray, "ds", ray)
 
 
@@ -127,33 +119,80 @@ def _pick_field(ray, fname: str, preferred_ftypes: Sequence[str]) -> Tuple[str, 
     raise KeyError(f"Missing field {fname}. Tried: {[(ft, fname) for ft in preferred_ftypes]}")
 
 
+# -------------------------
+# Metallicity handling (FIXED)
+# -------------------------
+
 def ensure_metallicity_field(ds) -> None:
     """
-    Trident often expects ("gas","metallicity"). TNG cutouts often store ("gas","GFM_Metallicity").
-    Alias if needed.
+    Ensure Trident can find metallicity.
+
+    Reality for your cutout (based on error):
+        missing: ('gas','GFM_Metallicity')
+        present: ('PartType0','GFM_Metallicity')
+
+    Trident often looks for:
+        ('gas','metallicity')
+
+    Strategy:
+      1) If ('gas','metallicity') exists: done.
+      2) If ('gas','GFM_Metallicity') exists: alias it to ('gas','metallicity') with sampling_type='cell'.
+      3) If ('PartType0','GFM_Metallicity') exists: create proxy ('gas','metallicity') forwarding to it,
+         but sampling_type='particle' (critical).
     """
     if _field_exists(ds, ("gas", "metallicity")):
         return
 
-    candidates = [("gas", "GFM_Metallicity"), ("gas", "Metallicity")]
-    src = None
-    for c in candidates:
-        if _field_exists(ds, c):
-            src = c
-            break
-    if src is None:
+    # Case: true gas field exists (cell-based)
+    if _field_exists(ds, ("gas", "GFM_Metallicity")):
+        src = ("gas", "GFM_Metallicity")
+
+        def _metallicity_alias(field, data):
+            return data[src]
+
+        ds.add_field(
+            ("gas", "metallicity"),
+            function=_metallicity_alias,
+            sampling_type="cell",
+            units="dimensionless",
+            force_override=True,
+        )
         return
 
-    def _metallicity_alias(field, data):
-        return data[src]
+    if _field_exists(ds, ("gas", "Metallicity")):
+        src = ("gas", "Metallicity")
 
-    ds.add_field(
-        ("gas", "metallicity"),
-        function=_metallicity_alias,
-        sampling_type="cell",
-        units="dimensionless",
-        force_override=True,
-    )
+        def _metallicity_alias(field, data):
+            return data[src]
+
+        ds.add_field(
+            ("gas", "metallicity"),
+            function=_metallicity_alias,
+            sampling_type="cell",
+            units="dimensionless",
+            force_override=True,
+        )
+        return
+
+    # Case: gas is represented as particles (TNG cutout PartType0)
+    if _field_exists(ds, ("PartType0", "GFM_Metallicity")):
+        src = ("PartType0", "GFM_Metallicity")
+
+        def _gas_metallicity_proxy(field, data):
+            return data[src]
+
+        # IMPORTANT: sampling_type must be "particle" here.
+        ds.add_field(
+            ("gas", "metallicity"),
+            function=_gas_metallicity_proxy,
+            sampling_type="particle",
+            units="dimensionless",
+            force_override=True,
+        )
+        return
+
+    # If none found, do nothing (Trident will fail later with a clear message)
+    return
 
 
 def ions_from_lines(lines: Sequence[str]) -> List[str]:
@@ -181,27 +220,23 @@ def add_ions(ds, ions: Sequence[str]) -> None:
 # -------------------------
 
 def make_ray(ds, p0_ckpch_abs, p1_ckpch_abs, data_filename, solution_filename):
+    """
+    Do NOT force a 'ray_fields' list that includes ('gas','GFM_Metallicity').
+
+    Reason: in your dataset that field does not exist as gas, it exists as PartType0.
+    Forcing it causes immediate YTFieldNotFound.
+    """
     p0 = ds.arr(np.asarray(p0_ckpch_abs, float), "code_length")
     p1 = ds.arr(np.asarray(p1_ckpch_abs, float), "code_length")
-
-    # Force the ray file to contain the metallicity source field.
-    # TNG usually has GFM_Metallicity, not metallicity.
-    ray_fields = [
-        ("gas", "density"),
-        ("gas", "temperature"),
-        ("gas", "GFM_Metallicity"),   # IMPORTANT
-        ("gas", "H_number_density"),  # optional but often useful
-    ]
 
     return trident.make_simple_ray(
         ds,
         start_position=p0,
         end_position=p1,
-        fields=ray_fields,            # IMPORTANT
-        ftype="gas",                  # IMPORTANT
         data_filename=data_filename,
         solution_filename=solution_filename,
     )
+
 
 def build_spectrum(ray, lines, instr="COS-G130M"):
     sg = trident.SpectrumGenerator(instr)
@@ -236,6 +271,8 @@ def compute_columns(ray):
         except Exception:
             return np.nan
 
+    # These ion number-density fields may or may not exist depending on Trident/yt path;
+    # keep best-effort behavior.
     cols["N_HI_cm2"]    = _col(("gas", "H_p0_number_density"))
     cols["N_CII_cm2"]   = _col(("gas", "C_p1_number_density"))
     cols["N_SiIII_cm2"] = _col(("gas", "Si_p2_number_density"))
@@ -264,7 +301,7 @@ def is_valid_h5(path):
 def save_spectrum_only_h5(path, meta: dict, spec) -> None:
     """
     Minimal, robust output: lambda + flux + tau if present.
-    This is written FIRST, before any bundle/combined work.
+    Written FIRST.
     """
     def _w(f):
         mg = f.create_group("meta")
@@ -278,7 +315,6 @@ def save_spectrum_only_h5(path, meta: dict, spec) -> None:
         sg.create_dataset("lambda_A", data=np.asarray(spec.lambda_field).astype(float))
         sg.create_dataset("flux",     data=np.asarray(spec.flux_field).astype(float))
 
-        # some trident versions expose tau_field; some do not
         tau = getattr(spec, "tau_field", None)
         if tau is not None:
             try:
@@ -307,7 +343,6 @@ def _write_bundle_into_group(g, meta, ray, spec, cols):
     pref = ("index", "ray", "all", "gas", "grid")
     rg = g.create_group("ray")
 
-    # dl optional
     try:
         dl_f = _pick_field(ray, "dl", pref)
         rg.create_dataset("dl_code", data=np.asarray(ray.r[dl_f]).astype(float))
@@ -315,7 +350,6 @@ def _write_bundle_into_group(g, meta, ray, spec, cols):
     except Exception:
         rg.attrs["dl_field"] = "NA"
 
-    # x/y/z always explicit to avoid ambiguity
     x_f = _pick_field(ray, "x", pref)
     y_f = _pick_field(ray, "y", pref)
     z_f = _pick_field(ray, "z", pref)
@@ -389,8 +423,8 @@ def process_run_for_sid(ds, sid, snap, run_label, paths: JobPaths, cfg: SpectraC
     )
 
     job_root = os.path.join(paths.output_base, f"rays_and_spectra_sid{sid}_snap{snap}_{run_label}")
-    spectra_dir  = os.path.join(job_root, "spectra_h5")      # spectrum-only (always try)
-    rays_dir     = os.path.join(job_root, "rays")            # optional bundles
+    spectra_dir  = os.path.join(job_root, "spectra_h5")
+    rays_dir     = os.path.join(job_root, "rays")
     logs_dir     = os.path.join(job_root, "logs")
     combined_dir = os.path.join(job_root, "combined")
     combined_h5  = os.path.join(combined_dir, f"all_rays_{run_label}.h5")
@@ -425,7 +459,6 @@ def process_run_for_sid(ds, sid, snap, run_label, paths: JobPaths, cfg: SpectraC
         lines=json.dumps(list(cfg.lines)),
     )
 
-    # Scratch: include pid to avoid collisions if multiple jobs run same SID.
     ray_scratch_dir = os.environ.get("SLURM_TMPDIR") or os.path.join(paths.output_base, "_tmp_trident")
     ensure_dir(ray_scratch_dir)
     pid = os.getpid()
@@ -455,7 +488,6 @@ def process_run_for_sid(ds, sid, snap, run_label, paths: JobPaths, cfg: SpectraC
             if params.verbose:
                 print(f"[{run_label}] ({len(summary_rows)+errors+1}/{len(df)}) {tag}")
 
-            # clean scratch
             for p in (rayfile, trajfile):
                 try:
                     os.remove(p)
@@ -463,12 +495,12 @@ def process_run_for_sid(ds, sid, snap, run_label, paths: JobPaths, cfg: SpectraC
                     pass
 
             ray = make_ray(ds, p0, p1, data_filename=rayfile, solution_filename=trajfile)
-            
-            # Make sure the *ray dataset* has ("gas","metallicity") before any ion creation happens.
+
+            # Ensure metallicity on the *ray dataset* too.
             rds = _ray_dataset(ray)
             ensure_metallicity_field(rds)
 
-            # (Optional but recommended) build needed ion fields on the ray dataset itself.
+            # Best-effort ion fields on ray dataset
             ions_needed = ions_from_lines(cfg.lines)
             try:
                 add_ions(rds, ions_needed)
@@ -477,7 +509,6 @@ def process_run_for_sid(ds, sid, snap, run_label, paths: JobPaths, cfg: SpectraC
 
             cols = compute_columns(ray)
 
-            # Generate spectrum (this is the most important step)
             sg = build_spectrum(ray, cfg.lines, instr=cfg.instrument)
 
             meta = dict(
@@ -498,11 +529,9 @@ def process_run_for_sid(ds, sid, snap, run_label, paths: JobPaths, cfg: SpectraC
                 instrument=str(cfg.instrument),
             )
 
-            # 1) ALWAYS write spectrum-only first
             spec_path = os.path.join(spectra_dir, f"{tag}_spectrum.h5")
             save_spectrum_only_h5(spec_path, meta, sg)
 
-            # 2) Best-effort bundle + combined (must not break the run)
             out_dir = os.path.join(rays_dir, f"sightline={sightline_id}", f"mode={mode}", f"alpha={alpha_tag}")
             ensure_dir(out_dir)
 
@@ -575,12 +604,10 @@ def run_all_runs_for_sid(paths: JobPaths, params: JobParams, cfg: SpectraConfig)
     ds = yt.load(paths.cutout_h5)
     ensure_metallicity_field(ds)
 
-    # Harmless if already present; warnings are fine.
     ions_needed = ions_from_lines(cfg.lines)
     try:
         add_ions(ds, ions_needed)
     except Exception:
-        # ion field creation is not strictly required for spectrum generation in all trident versions
         pass
 
     for run_label in params.run_labels:
