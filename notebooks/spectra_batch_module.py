@@ -18,6 +18,12 @@ Primary goals:
      - forcing required ion number-density fields to be WRITTEN into the ray HDF5
        via trident.make_simple_ray(..., fields=[...])
 
+Added (parity with older project):
+  5) Explicitly apply instrument LSF (sg.apply_lsf()).
+  6) Save BOTH raw flux (exp(-tau)) and LSF flux (sg.flux_field).
+  7) Save tau whenever available (and keep it with both products).
+  8) Optional Gaussian noise injection (OFF by default).
+
 Expected rays CSV:
   <ORIENT_OUT_BASE>/sid<SID>/rays_and_recipes_sid<SID>_snap<SNAP>_<RUN_LABEL>/rays_sid<SID>.csv
 
@@ -36,7 +42,7 @@ import time
 import argparse
 import traceback
 from dataclasses import dataclass, asdict
-from typing import Optional, List, Sequence, Tuple, Any, Dict
+from typing import Optional, List, Sequence, Tuple, Any, Dict, Mapping
 
 import numpy as np
 import pandas as pd
@@ -74,9 +80,8 @@ class JobParams:
 
 
 # IMPORTANT:
-# - run_spectra_one_sid.py in your tree is calling SpectraConfig(..., zoom_half_A=...)
-# - This class must accept that keyword.
-# - Also accept/ignore unknown kwargs to avoid future mismatches.
+# - run_spectra_one_sid.py is calling SpectraConfig(..., zoom_half_A=...)
+# - accept/ignore unknown kwargs to avoid future mismatches.
 @dataclass(init=False)
 class SpectraConfig:
     def __init__(
@@ -86,6 +91,15 @@ class SpectraConfig:
         zooms_A: Optional[List[float]] = None,
         zoom_half_A: float = 3.0,
         make_plots: bool = False,
+
+        # New: instrument realism toggles
+        apply_lsf: bool = True,
+
+        # New: optional noise model (OFF by default)
+        add_noise: bool = False,
+        snr: float = 0.0,                 # SNR at continuum; used if add_noise=True
+        noise_seed: int = 0,              # 0 => nondeterministic; else deterministic
+
         **kwargs: Any,
     ):
         self.lines = lines if lines is not None else ["H I 1216", "C II 1335", "Si III 1206"]
@@ -93,6 +107,11 @@ class SpectraConfig:
         self.zooms_A = zooms_A if zooms_A is not None else [1215.67, 1334.532, 1206.50]
         self.zoom_half_A = float(zoom_half_A)
         self.make_plots = bool(make_plots)
+
+        self.apply_lsf = bool(apply_lsf)
+        self.add_noise = bool(add_noise)
+        self.snr = float(snr) if snr is not None else 0.0
+        self.noise_seed = int(noise_seed) if noise_seed is not None else 0
         # ignore kwargs on purpose
 
 
@@ -141,7 +160,6 @@ def ensure_metallicity_field(ds) -> None:
     if _field_exists(ds, ("gas", "metallicity")):
         return
 
-    # Common candidates on grid/cell data.
     candidates = [("gas", "GFM_Metallicity"), ("gas", "Metallicity")]
     src = None
     for c in candidates:
@@ -212,7 +230,14 @@ def add_ions(ds, ions: Sequence[str]) -> None:
 # Ray + spectrum helpers
 # -------------------------
 
-def make_ray(ds, p0_ckpch_abs, p1_ckpch_abs, data_filename, solution_filename, ions_needed: Optional[Sequence[str]] = None):
+def make_ray(
+    ds,
+    p0_ckpch_abs,
+    p1_ckpch_abs,
+    data_filename,
+    solution_filename,
+    ions_needed: Optional[Sequence[str]] = None,
+):
     """
     Build a simple ray and FORCE writing required fields into the ray HDF5.
 
@@ -253,10 +278,94 @@ def make_ray(ds, p0_ckpch_abs, p1_ckpch_abs, data_filename, solution_filename, i
     )
 
 
-def build_spectrum(ray, lines, instr="COS-G130M"):
-    sg = trident.SpectrumGenerator(instr)
+def _get_sg_arrays(sg) -> Tuple[np.ndarray, np.ndarray, Optional[np.ndarray]]:
+    lam = np.asarray(sg.lambda_field).astype(float)
+    flux = np.asarray(sg.flux_field).astype(float)
+    tau = getattr(sg, "tau_field", None)
+    if tau is not None:
+        try:
+            tau = np.asarray(tau).astype(float)
+        except Exception:
+            tau = None
+    return lam, flux, tau
+
+
+def _maybe_add_noise(flux: np.ndarray, snr: float, seed: int = 0) -> np.ndarray:
+    """
+    Simple Gaussian noise model around transmission.
+    OFF unless add_noise=True and snr>0.
+
+    Notes:
+      - This is not a full COS noise model. It's a pragmatic SNR knob.
+      - Transmission is clipped to [0,1] after noise.
+    """
+    if snr <= 0:
+        return flux
+
+    rng = np.random.default_rng(None if seed == 0 else seed)
+    sigma = 1.0 / snr
+    noisy = flux + rng.normal(0.0, sigma, size=flux.shape)
+    return np.clip(noisy, 0.0, 1.0)
+
+
+def build_spectrum_products(ray, lines, cfg: SpectraConfig) -> Dict[str, Mapping[str, Any]]:
+    """
+    Returns:
+      {
+        "raw": {"lambda_A":..., "flux":..., "tau":...},
+        "lsf": {"lambda_A":..., "flux":..., "tau":...},
+      }
+
+    raw flux is exp(-tau) when tau exists, else fallback to current sg.flux_field.
+    lsf flux is sg.flux_field after apply_lsf() if enabled, else equal to raw/sg output.
+    Optional noise can be applied to raw and/or lsf consistently.
+    """
+    sg = trident.SpectrumGenerator(cfg.instrument)
     sg.make_spectrum(ray, lines=lines)
-    return sg
+
+    # Grab tau (if available) BEFORE LSF; tau is an optical depth grid product.
+    lam0, flux0, tau0 = _get_sg_arrays(sg)
+
+    # Define raw as exp(-tau) if possible.
+    if tau0 is not None:
+        flux_raw = np.exp(-tau0)
+        lam_raw = lam0
+        tau_raw = tau0
+    else:
+        # fallback: if tau missing, we at least return sg flux as "raw"
+        flux_raw = flux0
+        lam_raw = lam0
+        tau_raw = None
+
+    # Apply LSF explicitly (your old code did this)
+    if cfg.apply_lsf:
+        try:
+            sg.apply_lsf()
+        except Exception:
+            # Do not hard-fail the ray if apply_lsf trips on something; keep going.
+            pass
+
+    lam_lsf, flux_lsf, tau_lsf = _get_sg_arrays(sg)
+
+    # Tau should be same grid product; prefer tau0 if present.
+    tau_use = tau0 if tau0 is not None else (tau_lsf if tau_lsf is not None else None)
+
+    # Optional noise (OFF by default)
+    if cfg.add_noise and cfg.snr > 0:
+        flux_raw = _maybe_add_noise(flux_raw, cfg.snr, cfg.noise_seed)
+        flux_lsf = _maybe_add_noise(flux_lsf, cfg.snr, cfg.noise_seed)
+
+    return {
+        "raw": {"lambda_A": lam_raw, "flux": flux_raw, "tau": tau_use},
+        "lsf": {"lambda_A": lam_lsf, "flux": flux_lsf, "tau": tau_use},
+        "meta": {
+            "instrument": str(cfg.instrument),
+            "apply_lsf": bool(cfg.apply_lsf),
+            "add_noise": bool(cfg.add_noise),
+            "snr": float(cfg.snr),
+            "noise_seed": int(cfg.noise_seed),
+        },
+    }
 
 
 def compute_columns(ray):
@@ -312,9 +421,19 @@ def is_valid_h5(path):
         return False
 
 
-def save_spectrum_only_h5(path, meta: dict, spec) -> None:
+def _jsonable(v: Any) -> Any:
+    try:
+        json.dumps(v)
+        return v
+    except Exception:
+        return str(v)
+
+
+def save_spectrum_only_h5(path, meta: dict, spec_products: dict) -> None:
     """
-    Minimal, robust output: lambda + flux + tau if present.
+    Minimal, robust output:
+      - raw: lambda + flux + tau (if present)
+      - lsf: lambda + flux + tau (if present)
     Written FIRST, before any bundle/combined work.
     """
     def _w(f):
@@ -323,37 +442,50 @@ def save_spectrum_only_h5(path, meta: dict, spec) -> None:
             try:
                 mg.attrs[k] = v
             except TypeError:
-                mg.attrs[k] = json.dumps(v)
+                mg.attrs[k] = json.dumps(_jsonable(v))
 
-        sg = f.create_group("spectrum")
-        sg.create_dataset("lambda_A", data=np.asarray(spec.lambda_field).astype(float))
-        sg.create_dataset("flux",     data=np.asarray(spec.flux_field).astype(float))
-
-        tau = getattr(spec, "tau_field", None)
-        if tau is not None:
+        pm = f.create_group("product_meta")
+        for k, v in spec_products.get("meta", {}).items():
             try:
-                sg.create_dataset("tau", data=np.asarray(tau).astype(float))
-            except Exception:
-                pass
+                pm.attrs[k] = v
+            except TypeError:
+                pm.attrs[k] = json.dumps(_jsonable(v))
+
+        gs = f.create_group("spectrum")
+        for tag in ("raw", "lsf"):
+            g = gs.create_group(tag)
+            g.create_dataset("lambda_A", data=np.asarray(spec_products[tag]["lambda_A"]).astype(float))
+            g.create_dataset("flux",     data=np.asarray(spec_products[tag]["flux"]).astype(float))
+            tau = spec_products[tag].get("tau", None)
+            if tau is not None:
+                g.create_dataset("tau", data=np.asarray(tau).astype(float))
 
     atomic_write_h5(path, _w)
 
 
-def _write_bundle_into_group(g, meta, ray, spec, cols):
+def _write_bundle_into_group(g, meta, ray, spec_products, cols, dump_all_ray_fields: bool = False):
     mg = g.create_group("meta")
     for k, v in meta.items():
         try:
             mg.attrs[k] = v
         except TypeError:
-            mg.attrs[k] = json.dumps(v)
+            mg.attrs[k] = json.dumps(_jsonable(v))
 
     cg = g.create_group("columns")
     for k, v in cols.items():
         try:
             cg.attrs[k] = v
         except TypeError:
-            cg.attrs[k] = json.dumps(v)
+            cg.attrs[k] = json.dumps(_jsonable(v))
 
+    pm = g.create_group("product_meta")
+    for k, v in spec_products.get("meta", {}).items():
+        try:
+            pm.attrs[k] = v
+        except TypeError:
+            pm.attrs[k] = json.dumps(_jsonable(v))
+
+    # ---- ray (minimal, safe)
     pref = ("index", "ray", "all", "gas", "grid")
     rg = g.create_group("ray")
 
@@ -365,7 +497,7 @@ def _write_bundle_into_group(g, meta, ray, spec, cols):
     except Exception:
         rg.attrs["dl_field"] = "NA"
 
-    # x/y/z always explicit to avoid ambiguity
+    # x/y/z explicit to avoid ambiguity
     x_f = _pick_field(ray, "x", pref)
     y_f = _pick_field(ray, "y", pref)
     z_f = _pick_field(ray, "z", pref)
@@ -377,26 +509,51 @@ def _write_bundle_into_group(g, meta, ray, spec, cols):
     rg.attrs["y_field"] = str(y_f)
     rg.attrs["z_field"] = str(z_f)
 
-    sg = g.create_group("spectrum")
-    sg.create_dataset("lambda_A", data=np.asarray(spec.lambda_field).astype(float))
-    sg.create_dataset("flux",     data=np.asarray(spec.flux_field).astype(float))
-
-    tau = getattr(spec, "tau_field", None)
-    if tau is not None:
+    # Optional: dump all ray fields (can bloat files / trigger edge cases).
+    if dump_all_ray_fields:
+        fg = rg.create_group("fields")
+        # Accessing ray.r for everything can still fail; keep it best-effort.
+        rds = _ray_dataset(ray)
         try:
-            sg.create_dataset("tau", data=np.asarray(tau).astype(float))
+            field_list = list(getattr(rds, "field_list", []))
         except Exception:
-            pass
+            field_list = []
+        for ft, fn in field_list:
+            try:
+                arr = ray.r[(ft, fn)]
+                fg.create_dataset(f"{ft}__{fn}", data=np.asarray(arr).astype(float))
+            except Exception:
+                continue
+
+    # ---- spectra: raw + lsf
+    sg = g.create_group("spectrum")
+    for tag in ("raw", "lsf"):
+        st = sg.create_group(tag)
+        st.create_dataset("lambda_A", data=np.asarray(spec_products[tag]["lambda_A"]).astype(float))
+        st.create_dataset("flux",     data=np.asarray(spec_products[tag]["flux"]).astype(float))
+        tau = spec_products[tag].get("tau", None)
+        if tau is not None:
+            st.create_dataset("tau", data=np.asarray(tau).astype(float))
 
 
-def save_bundle_hdf5(path, meta, ray, spec, cols):
+def save_bundle_hdf5(path, meta, ray, spec_products, cols, dump_all_ray_fields: bool = False):
     def _w(f):
         base = f.create_group("bundle")
-        _write_bundle_into_group(base, meta, ray, spec, cols)
+        _write_bundle_into_group(base, meta, ray, spec_products, cols, dump_all_ray_fields=dump_all_ray_fields)
     atomic_write_h5(path, _w)
 
 
-def append_to_combined(agg_path, group_path, meta, ray, spec, cols, globals_once, max_retries=3):
+def append_to_combined(
+    agg_path,
+    group_path,
+    meta,
+    ray,
+    spec_products,
+    cols,
+    globals_once,
+    max_retries=3,
+    dump_all_ray_fields: bool = False,
+):
     for attempt in range(1, max_retries + 1):
         try:
             if (not os.path.exists(agg_path)) or (not is_valid_h5(agg_path)):
@@ -406,7 +563,7 @@ def append_to_combined(agg_path, group_path, meta, ray, spec, cols, globals_once
                         try:
                             g.attrs[k] = v
                         except TypeError:
-                            g.attrs[k] = json.dumps(v)
+                            g.attrs[k] = json.dumps(_jsonable(v))
                 atomic_write_h5(agg_path, _init)
 
             with h5py.File(agg_path, "a") as f:
@@ -416,12 +573,12 @@ def append_to_combined(agg_path, group_path, meta, ray, spec, cols, globals_once
                         try:
                             g.attrs[k] = v
                         except TypeError:
-                            g.attrs[k] = json.dumps(v)
+                            g.attrs[k] = json.dumps(_jsonable(v))
 
                 if group_path in f:
                     del f[group_path]
                 base = f.create_group(group_path)
-                _write_bundle_into_group(base, meta, ray, spec, cols)
+                _write_bundle_into_group(base, meta, ray, spec_products, cols, dump_all_ray_fields=dump_all_ray_fields)
             return
         except OSError as e:
             time.sleep(0.5)
@@ -484,6 +641,10 @@ def process_run_for_sid(ds, sid, snap, run_label, paths: JobPaths, cfg: SpectraC
         SNAP=int(snap),
         instrument=str(cfg.instrument),
         lines=json.dumps(list(cfg.lines)),
+        apply_lsf=bool(cfg.apply_lsf),
+        add_noise=bool(cfg.add_noise),
+        snr=float(cfg.snr),
+        noise_seed=int(cfg.noise_seed),
     )
 
     # Scratch: include pid to avoid collisions if multiple jobs run same SID.
@@ -497,6 +658,9 @@ def process_run_for_sid(ds, sid, snap, run_label, paths: JobPaths, cfg: SpectraC
 
     # Determine required ions from line list once per run_label
     ions_needed = ions_from_lines(cfg.lines)
+
+    # Optional: dump all ray fields inside bundles/combined
+    dump_all_ray_fields = bool(int(os.environ.get("SPECTRA_DUMP_ALL_RAY_FIELDS", "0")))
 
     for j, row in df.iterrows():
         try:
@@ -541,8 +705,8 @@ def process_run_for_sid(ds, sid, snap, run_label, paths: JobPaths, cfg: SpectraC
 
             cols = compute_columns(ray)
 
-            # Generate spectrum (critical)
-            sg = build_spectrum(ray, cfg.lines, instr=cfg.instrument)
+            # Generate spectrum products (raw + lsf + tau)
+            spec_products = build_spectrum_products(ray, cfg.lines, cfg)
 
             meta = dict(
                 RUN_LABEL=run_label,
@@ -564,7 +728,7 @@ def process_run_for_sid(ds, sid, snap, run_label, paths: JobPaths, cfg: SpectraC
 
             # 1) ALWAYS write spectrum-only first
             spec_path = os.path.join(spectra_dir, f"{tag}_spectrum.h5")
-            save_spectrum_only_h5(spec_path, meta, sg)
+            save_spectrum_only_h5(spec_path, meta, spec_products)
 
             # 2) Best-effort bundle + combined (must not break the run)
             out_dir = os.path.join(rays_dir, f"sightline={sightline_id}", f"mode={mode}", f"alpha={alpha_tag}")
@@ -572,7 +736,7 @@ def process_run_for_sid(ds, sid, snap, run_label, paths: JobPaths, cfg: SpectraC
 
             bundle_path = os.path.join(out_dir, f"{tag}_bundle.h5")
             try:
-                save_bundle_hdf5(bundle_path, meta, ray, sg, cols)
+                save_bundle_hdf5(bundle_path, meta, ray, spec_products, cols, dump_all_ray_fields=dump_all_ray_fields)
             except Exception as e:
                 with open(os.path.join(logs_dir, "errors.txt"), "a") as f:
                     f.write(f"[BUNDLE_FAIL] {tag}: {type(e).__name__}: {e}\n")
@@ -581,7 +745,16 @@ def process_run_for_sid(ds, sid, snap, run_label, paths: JobPaths, cfg: SpectraC
 
             grp_path = f"rays/sightline={sightline_id}/mode={mode}/alpha={alpha_tag}/ray_{j:06d}"
             try:
-                append_to_combined(combined_h5, grp_path, meta, ray, sg, cols, globals_once)
+                append_to_combined(
+                    combined_h5,
+                    grp_path,
+                    meta,
+                    ray,
+                    spec_products,
+                    cols,
+                    globals_once,
+                    dump_all_ray_fields=dump_all_ray_fields,
+                )
             except Exception as e:
                 with open(os.path.join(logs_dir, "errors.txt"), "a") as f:
                     f.write(f"[COMBINED_FAIL] {tag}: {type(e).__name__}: {e}\n")
@@ -624,6 +797,7 @@ def process_run_for_sid(ds, sid, snap, run_label, paths: JobPaths, cfg: SpectraC
             print(f"[OK] {run_label}: spectra={len(summary_rows)} errors={errors}")
             print(f"[OK] {run_label}: spectra-only dir = {spectra_dir}")
             print(f"[OK] {run_label}: summary CSV = {master_csv}")
+            print(f"[OK] apply_lsf={cfg.apply_lsf} add_noise={cfg.add_noise} snr={cfg.snr}")
     else:
         print(f"[WARN] {run_label}: no successful spectra; errors={errors}")
 
@@ -635,12 +809,20 @@ def run_all_runs_for_sid(paths: JobPaths, params: JobParams, cfg: SpectraConfig)
     if params.verbose:
         print("[PATHS]", asdict(paths))
         print("[PARAM]", asdict(params))
-        print("[CFG  ]", dict(lines=cfg.lines, instrument=cfg.instrument, zoom_half_A=cfg.zoom_half_A, make_plots=cfg.make_plots))
+        print("[CFG  ]", dict(
+            lines=cfg.lines,
+            instrument=cfg.instrument,
+            zoom_half_A=cfg.zoom_half_A,
+            make_plots=cfg.make_plots,
+            apply_lsf=cfg.apply_lsf,
+            add_noise=cfg.add_noise,
+            snr=cfg.snr,
+            noise_seed=cfg.noise_seed,
+        ))
 
     ds = yt.load(paths.cutout_h5)
     ensure_metallicity_field(ds)
 
-    # Best-effort: add ions on the parent dataset context too
     ions_needed = ions_from_lines(cfg.lines)
     try:
         add_ions(ds, ions_needed)
@@ -679,6 +861,12 @@ def _parse_args(argv=None):
     p.add_argument("--make_plots", action="store_true")
     p.add_argument("--verbose", action="store_true")
 
+    # New realism toggles
+    p.add_argument("--no-lsf", action="store_true", help="Disable sg.apply_lsf() (default is enabled).")
+    p.add_argument("--add-noise", action="store_true", help="Add Gaussian noise in transmission space (default off).")
+    p.add_argument("--snr", type=float, default=0.0, help="Continuum SNR if --add-noise is set.")
+    p.add_argument("--noise-seed", type=int, default=0, help="0=random, else deterministic seed.")
+
     return p.parse_args(argv)
 
 
@@ -715,6 +903,11 @@ def _main_cli(argv=None):
         instrument=a.instrument,
         zoom_half_A=float(a.zoom_half_A),
         make_plots=bool(a.make_plots),
+
+        apply_lsf=(not a.no_lsf),
+        add_noise=bool(a.add_noise),
+        snr=float(a.snr),
+        noise_seed=int(a.noise_seed),
     )
 
     run_all_runs_for_sid(paths, params, cfg)
