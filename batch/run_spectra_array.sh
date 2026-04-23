@@ -3,8 +3,8 @@
 #SBATCH --partition=public
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=8
-#SBATCH --mem=16G
+#SBATCH --cpus-per-task=16
+#SBATCH --mem=64G
 #SBATCH --time=1-18:00:00
 #SBATCH --output=/scratch/tsingh65/m61-tng/logs/spec_arr_%A_%a.out
 #SBATCH --error=/scratch/tsingh65/m61-tng/logs/spec_arr_%A_%a.err
@@ -13,8 +13,8 @@
 # Notes:
 # - Array maps SLURM_ARRAY_TASK_ID -> SID_LIST line number.
 # - Auto-builds SID_LIST from /scratch/tsingh65/TNG50-1_snap99/out_sub_* directories.
-# - Skips SID=488530 (your already-running job).
-# - Optionally skips SIDs already processed (summary_all_rays.csv exists for all run-labels & modes).
+# - By default, includes all discovered SIDs.
+# - Optional skip-if-done logic can be enabled, but defaults to rerun everything.
 
 set -eo pipefail   # intentionally NOT using -u globally (conda hooks + nounset == pain)
 
@@ -26,21 +26,22 @@ RUN_LABELS="L4Rvir"                       # comma-separated if multiple: "L3Rvir
 FILTER_MODES=("noflip" "flip")
 
 # Must match your local Trident line-name conventions (integer-label / aliases).
-LINES_CSV="Si II 1190,Si II 1193,Si III 1206,N V 1239,Si II 1260,O I 1302,C II 1335,Si IV,H I 1216"
+LINES_CSV="Si II 1190,Si II 1193,Si III 1206,N V 1239,Si II 1260,O I 1302,C II 1335,Si IV 1403,H I 1216"
 
 REPO="/home/tsingh65/m61-tng"
 CUTOUT_ROOT="/scratch/tsingh65/TNG50-1_snap99"
 ORIENT_OUT_BASE="/scratch/tsingh65/m61-tng/outputs"
 
-# Exclude the currently running SID
-EXCLUDE_SID="488530"
+# Leave empty to include all discovered SIDs. Set a numeric SID to exclude one explicitly.
+EXCLUDE_SID=""
 
 # Where to store logs + generated SID list
 GLOBAL_LOGDIR="/scratch/tsingh65/m61-tng/logs"
 SID_LIST="${REPO}/data/sids_from_cutouts_snap${SNAP}.txt"
+REBUILD_SID_LIST=1
 
-# Skip work if already processed (set to 0 to force rerun)
-SKIP_IF_DONE=1
+# Skip work if already processed (default 0 = rerun all SIDs)
+SKIP_IF_DONE=0
 
 mkdir -p "${GLOBAL_LOGDIR}"
 
@@ -63,19 +64,18 @@ fi
 # -----------------------------
 # BUILD SID LIST (FROM CUTOUT DIRECTORIES)
 # -----------------------------
-if [[ ! -f "${SID_LIST}" ]]; then
-  echo "[INFO] SID_LIST not found; generating: ${SID_LIST}"
+if [[ "${REBUILD_SID_LIST}" -eq 1 || ! -f "${SID_LIST}" ]]; then
+  echo "[INFO] Generating SID_LIST: ${SID_LIST}"
   mkdir -p "$(dirname "${SID_LIST}")"
 
   # Find directories like: /scratch/tsingh65/TNG50-1_snap99/out_sub_488530
-  # Extract numeric SID, exclude EXCLUDE_SID, sort unique.
+  # Extract numeric SID and sort unique.
   find "${CUTOUT_ROOT}" -maxdepth 1 -type d -name "out_sub_*" -printf "%f\n" \
     | sed -E 's/^out_sub_([0-9]+)$/\1/' \
     | awk '/^[0-9]+$/' \
-    | awk -v ex="${EXCLUDE_SID}" '$0 != ex' \
     | sort -n -u > "${SID_LIST}"
 
-  echo "[INFO] WROTE ${SID_LIST}  N=$(wc -l < "${SID_LIST}")  (excluded SID=${EXCLUDE_SID})"
+  echo "[INFO] WROTE ${SID_LIST}  N=$(wc -l < "${SID_LIST}")"
 fi
 
 # -----------------------------
@@ -87,8 +87,8 @@ if [[ -z "${SID}" || ! "${SID}" =~ ^[0-9]+$ ]]; then
   exit 0
 fi
 
-if [[ "${SID}" == "${EXCLUDE_SID}" ]]; then
-  echo "[INFO] SID=${SID} is excluded (already running). Skipping."
+if [[ -n "${EXCLUDE_SID}" && "${SID}" == "${EXCLUDE_SID}" ]]; then
+  echo "[INFO] SID=${SID} matched EXCLUDE_SID=${EXCLUDE_SID}. Skipping by explicit request."
   exit 0
 fi
 
@@ -102,7 +102,7 @@ mkdir -p "${LOGDIR_SID}"
 CUTOUT_H5="${CUTOUT_ROOT}/out_sub_${SID}/cutout_ALLFIELDS_sphere_2p1Rvir_sub${SID}.hdf5"
 if [[ ! -f "${CUTOUT_H5}" ]]; then
   echo "[ERROR] Missing cutout for SID=${SID}: ${CUTOUT_H5}"
-  exit 0
+  exit 1
 fi
 
 # Optional: ensure orient outputs exist (rays CSV). If missing, skip.
@@ -112,8 +112,7 @@ for RL in "${RUN_LABEL_ARR[@]}"; do
   RAYS_CSV="${OUT_SID_DIR}/rays_and_recipes_sid${SID}_snap${SNAP}_${RL}/rays_sid${SID}.csv"
   if [[ ! -f "${RAYS_CSV}" ]]; then
     echo "[WARN] Missing rays CSV for SID=${SID} RUN_LABEL=${RL}: ${RAYS_CSV}"
-    echo "[WARN] Skipping this SID."
-    exit 0
+    echo "[WARN] Continuing anyway so this SID is still attempted."
   fi
 done
 
