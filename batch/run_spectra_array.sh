@@ -4,7 +4,7 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
-#SBATCH --mem=64G
+#SBATCH --mem=30G
 #SBATCH --time=1-18:00:00
 #SBATCH --output=/scratch/tsingh65/m61-tng/logs/spec_arr_%A_%a.out
 #SBATCH --error=/scratch/tsingh65/m61-tng/logs/spec_arr_%A_%a.err
