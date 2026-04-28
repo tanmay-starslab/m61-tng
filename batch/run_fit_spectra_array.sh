@@ -1,14 +1,14 @@
 #!/bin/bash
 #SBATCH --job-name=m61_fit_spec
-#SBATCH --partition=public
+#SBATCH --partition=htc
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=4
-#SBATCH --mem=12G
-#SBATCH --time=04:00:00
+#SBATCH --cpus-per-task=1
+#SBATCH --mem=4G
+#SBATCH --time=00:25:00
 #SBATCH --output=/home/tsingh65/m61-tng/logs/fit_spectra/fit_%A_%a.out
 #SBATCH --error=/home/tsingh65/m61-tng/logs/fit_spectra/fit_%A_%a.err
-#SBATCH --array=1-1%100   # OVERRIDE AT SUBMIT TIME, e.g. --array=1-1000%100
+#SBATCH --array=1-1%100   # OVERRIDE AT SUBMIT TIME, e.g. --array=1-1000%100 or --array=1-${N}%200
 
 set -eo pipefail
 
@@ -89,5 +89,9 @@ date
 
 # Submit examples:
 #   N=$(($(wc -l < /home/tsingh65/m61-tng/batch/fit_spectra_tasks_snap99_L4Rvir.tsv) - 1))
-#   sbatch --array=1-5%5 /home/tsingh65/m61-tng/batch/run_fit_spectra_array.sh
-#   sbatch --array=1-${N}%100 /home/tsingh65/m61-tng/batch/run_fit_spectra_array.sh
+#   sbatch --array=1-50%25 /home/tsingh65/m61-tng/batch/run_fit_spectra_array.sh
+#   sbatch --array=1-1000%100 /home/tsingh65/m61-tng/batch/run_fit_spectra_array.sh
+#   sbatch --array=1-${N}%200 /home/tsingh65/m61-tng/batch/run_fit_spectra_array.sh
+#
+# Production intentionally omits --make-plots to avoid writing one diagnostic
+# PNG per fitted line for every spectrum.

@@ -62,7 +62,7 @@ LINE_FIT_PARAMS: Dict[str, Dict[str, Any]] = {
     "Si III 1206": {
         "logN_bounds": (11.8, 16.5),
         "b_bounds": (6.0, 80.0),
-        "velocity_window": 600.0,
+        "velocity_window": 800.0,
         "upper_limit_window": 50.0,
         "max_lines": 5,
         "chisq_lim": 1.3,
@@ -78,7 +78,7 @@ LINE_FIT_PARAMS: Dict[str, Dict[str, Any]] = {
     "Si II 1260": {
         "logN_bounds": (11.9, 16.5),
         "b_bounds": (6.0, 60.0),
-        "velocity_window": 600.0,
+        "velocity_window": 800.0,
         "upper_limit_window": 50.0,
         "max_lines": 4,
         "chisq_lim": 1.3,
@@ -86,7 +86,7 @@ LINE_FIT_PARAMS: Dict[str, Dict[str, Any]] = {
     "O I 1302": {
         "logN_bounds": (13.1, 17.0),
         "b_bounds": (6.0, 50.0),
-        "velocity_window": 600.0,
+        "velocity_window": 800.0,
         "upper_limit_window": 50.0,
         "max_lines": 3,
         "chisq_lim": 1.3,
@@ -94,7 +94,7 @@ LINE_FIT_PARAMS: Dict[str, Dict[str, Any]] = {
     "C II 1335": {
         "logN_bounds": (12.7, 17.0),
         "b_bounds": (6.0, 70.0),
-        "velocity_window": 600.0,
+        "velocity_window": 800.0,
         "upper_limit_window": 50.0,
         "max_lines": 4,
         "chisq_lim": 1.3,
@@ -453,4 +453,3 @@ def select_task_row(task_list: str, task_index: int) -> Dict[str, str]:
             f"task_index={task_index} is outside task list row range 1..{len(rows)}"
         )
     return rows[idx]
-
