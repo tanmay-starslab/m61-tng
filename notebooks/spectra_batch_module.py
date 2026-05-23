@@ -41,6 +41,7 @@ import json
 import time
 import argparse
 import traceback
+import re
 from dataclasses import dataclass, asdict
 from typing import Optional, List, Sequence, Tuple, Any, Dict, Mapping
 
@@ -308,34 +309,32 @@ def _maybe_add_noise(flux: np.ndarray, snr: float, seed: int = 0) -> np.ndarray:
     return np.clip(noisy, 0.0, 1.0)
 
 
-def build_spectrum_products(ray, lines, cfg: SpectraConfig) -> Dict[str, Mapping[str, Any]]:
-    """
-    Returns:
-      {
-        "raw": {"lambda_A":..., "flux":..., "tau":...},
-        "lsf": {"lambda_A":..., "flux":..., "tau":...},
-      }
+def _line_key(line: str) -> str:
+    key = re.sub(r"[^A-Za-z0-9]+", "_", str(line).strip()).strip("_")
+    return key or "line"
 
-    raw flux is exp(-tau) when tau exists, else fallback to current sg.flux_field.
-    lsf flux is sg.flux_field after apply_lsf() if enabled, else equal to raw/sg output.
-    Optional noise can be applied to raw and/or lsf consistently.
-    """
+
+def _single_spectrum_product(ray, lines, cfg: SpectraConfig) -> Dict[str, Any]:
+    line_list = [lines] if isinstance(lines, str) else list(lines)
     sg = trident.SpectrumGenerator(cfg.instrument)
-    sg.make_spectrum(ray, lines=lines)
+    sg.make_spectrum(
+        ray,
+        lines=line_list,
+        use_peculiar_velocity=True,
+        use_doppler_redshift_only=True,
+    )
 
     # Grab tau (if available) BEFORE LSF; tau is an optical depth grid product.
     lam0, flux0, tau0 = _get_sg_arrays(sg)
 
     # Define raw as exp(-tau) if possible.
     if tau0 is not None:
-        flux_raw = np.exp(-tau0)
+        flux_raw = np.exp(tau0 * -1.0)
         lam_raw = lam0
-        tau_raw = tau0
     else:
         # fallback: if tau missing, we at least return sg flux as "raw"
         flux_raw = flux0
         lam_raw = lam0
-        tau_raw = None
 
     # Apply LSF explicitly (your old code did this)
     if cfg.apply_lsf:
@@ -346,8 +345,6 @@ def build_spectrum_products(ray, lines, cfg: SpectraConfig) -> Dict[str, Mapping
             pass
 
     lam_lsf, flux_lsf, tau_lsf = _get_sg_arrays(sg)
-
-    # Tau should be same grid product; prefer tau0 if present.
     tau_use = tau0 if tau0 is not None else (tau_lsf if tau_lsf is not None else None)
 
     # Optional noise (OFF by default)
@@ -358,9 +355,52 @@ def build_spectrum_products(ray, lines, cfg: SpectraConfig) -> Dict[str, Mapping
     return {
         "raw": {"lambda_A": lam_raw, "flux": flux_raw, "tau": tau_use},
         "lsf": {"lambda_A": lam_lsf, "flux": flux_lsf, "tau": tau_use},
+    }
+
+
+def build_spectrum_products(ray, lines, cfg: SpectraConfig) -> Dict[str, Mapping[str, Any]]:
+    """
+    Returns:
+      {
+        "raw": {"lambda_A":..., "flux":..., "tau":...},
+        "lsf": {"lambda_A":..., "flux":..., "tau":...},
+        "by_line": {
+          "Si_II_1190": {"line": "Si II 1190", "raw": {...}, "lsf": {...}},
+          ...
+        },
+      }
+
+    raw flux is exp(-tau) when tau exists, else fallback to current sg.flux_field.
+    lsf flux is sg.flux_field after apply_lsf() if enabled, else equal to raw/sg output.
+    Trident is called with use_peculiar_velocity=True and use_doppler_redshift_only=True.
+    Optional noise can be applied to raw and/or lsf consistently.
+    """
+    combined = _single_spectrum_product(ray, lines, cfg)
+
+    by_line = {}
+    seen_keys = set()
+    for line in lines:
+        key = _line_key(line)
+        if key in seen_keys:
+            suffix = 2
+            while f"{key}_{suffix}" in seen_keys:
+                suffix += 1
+            key = f"{key}_{suffix}"
+        seen_keys.add(key)
+        product = _single_spectrum_product(ray, [line], cfg)
+        product["line"] = str(line)
+        by_line[key] = product
+
+    return {
+        "raw": combined["raw"],
+        "lsf": combined["lsf"],
+        "by_line": by_line,
         "meta": {
             "instrument": str(cfg.instrument),
             "apply_lsf": bool(cfg.apply_lsf),
+            "use_peculiar_velocity": True,
+            "use_doppler_redshift_only": True,
+            "per_line_spectra_saved": True,
             "add_noise": bool(cfg.add_noise),
             "snr": float(cfg.snr),
             "noise_seed": int(cfg.noise_seed),
@@ -429,11 +469,100 @@ def _jsonable(v: Any) -> Any:
         return str(v)
 
 
-def save_spectrum_only_h5(path, meta: dict, spec_products: dict) -> None:
+def _write_product_group(parent, name: str, product: Mapping[str, Any]) -> None:
+    g = parent.create_group(name)
+    g.create_dataset("lambda_A", data=np.asarray(product["lambda_A"]).astype(float))
+    g.create_dataset("flux", data=np.asarray(product["flux"]).astype(float))
+    tau = product.get("tau", None)
+    if tau is not None:
+        g.create_dataset("tau", data=np.asarray(tau).astype(float))
+
+
+def _write_spectra_groups(parent, spec_products: Mapping[str, Any]) -> None:
+    gs = parent.create_group("spectrum")
+    for tag in ("raw", "lsf"):
+        _write_product_group(gs, tag, spec_products[tag])
+
+    bl = parent.create_group("spectrum_by_line")
+    for key, product in spec_products.get("by_line", {}).items():
+        lg = bl.create_group(key)
+        lg.attrs["line"] = str(product.get("line", key))
+        for tag in ("raw", "lsf"):
+            _write_product_group(lg, tag, product[tag])
+
+
+def _copy_h5_node(src, dst):
+    for k, v in src.attrs.items():
+        try:
+            dst.attrs[k] = v
+        except TypeError:
+            dst.attrs[k] = json.dumps(_jsonable(v))
+
+    for name, item in src.items():
+        if isinstance(item, h5py.Dataset):
+            src.copy(item, dst, name=name)
+        elif isinstance(item, h5py.Group):
+            child = dst.create_group(name)
+            _copy_h5_node(item, child)
+
+
+def _write_original_trident_ray(parent, ray_h5_path: Optional[str]) -> None:
+    if not ray_h5_path:
+        parent.attrs["original_trident_ray_h5_embedded"] = False
+        parent.attrs["original_trident_ray_h5_error"] = "No ray_h5_path was supplied."
+        return
+    if not os.path.isfile(ray_h5_path):
+        parent.attrs["original_trident_ray_h5_embedded"] = False
+        parent.attrs["original_trident_ray_h5_error"] = f"Missing ray_h5_path: {ray_h5_path}"
+        return
+
+    trg = parent.create_group("original_trident_ray_h5")
+    with h5py.File(ray_h5_path, "r") as src:
+        _copy_h5_node(src, trg)
+    parent.attrs["original_trident_ray_h5_embedded"] = True
+
+
+def _safe_dataset_name(name: str) -> str:
+    return re.sub(r"[^A-Za-z0-9_.-]+", "__", str(name).strip("/")) or "field"
+
+
+def _write_ray_convenience_from_h5(rg, ray_h5_path: Optional[str], dump_all_ray_fields: bool) -> None:
+    """
+    Write convenient flat ray arrays without touching yt's data container.
+    The authoritative, lossless ray copy is original_trident_ray_h5.
+    """
+    if not ray_h5_path or not os.path.isfile(ray_h5_path):
+        rg.attrs["convenience_source"] = "missing_original_ray_h5"
+        return
+
+    with h5py.File(ray_h5_path, "r") as src:
+        grid = src.get("grid", None)
+        if grid is None:
+            rg.attrs["convenience_source"] = "original_ray_h5_without_grid_group"
+            return
+
+        rg.attrs["convenience_source"] = "original_trident_ray_h5/grid"
+        for name, out_name in (("dl", "dl_code"), ("x", "x_code"), ("y", "y_code"), ("z", "z_code")):
+            if name in grid:
+                rg.create_dataset(out_name, data=grid[name][()])
+                rg.attrs[f"{out_name}_source"] = f"grid/{name}"
+
+        if dump_all_ray_fields:
+            fg = rg.create_group("fields")
+            for name, item in grid.items():
+                if not isinstance(item, h5py.Dataset):
+                    continue
+                out_name = _safe_dataset_name(f"grid__{name}")
+                fg.create_dataset(out_name, data=item[()])
+                fg[out_name].attrs["source_path"] = f"grid/{name}"
+
+
+def save_spectrum_only_h5(path, meta: dict, spec_products: dict, ray_h5_path: Optional[str] = None) -> None:
     """
     Minimal, robust output:
-      - raw: lambda + flux + tau (if present)
-      - lsf: lambda + flux + tau (if present)
+      - combined raw/lsf: lambda + flux + tau (if present)
+      - per-line raw/lsf: lambda + flux + tau (if present)
+      - original Trident ray HDF5 embedded verbatim under original_trident_ray_h5
     Written FIRST, before any bundle/combined work.
     """
     def _w(f):
@@ -451,19 +580,13 @@ def save_spectrum_only_h5(path, meta: dict, spec_products: dict) -> None:
             except TypeError:
                 pm.attrs[k] = json.dumps(_jsonable(v))
 
-        gs = f.create_group("spectrum")
-        for tag in ("raw", "lsf"):
-            g = gs.create_group(tag)
-            g.create_dataset("lambda_A", data=np.asarray(spec_products[tag]["lambda_A"]).astype(float))
-            g.create_dataset("flux",     data=np.asarray(spec_products[tag]["flux"]).astype(float))
-            tau = spec_products[tag].get("tau", None)
-            if tau is not None:
-                g.create_dataset("tau", data=np.asarray(tau).astype(float))
+        _write_spectra_groups(f, spec_products)
+        _write_original_trident_ray(f, ray_h5_path)
 
     atomic_write_h5(path, _w)
 
 
-def _write_bundle_into_group(g, meta, ray, spec_products, cols, dump_all_ray_fields: bool = False):
+def _write_bundle_into_group(g, meta, ray, spec_products, cols, dump_all_ray_fields: bool = False, ray_h5_path: Optional[str] = None):
     mg = g.create_group("meta")
     for k, v in meta.items():
         try:
@@ -485,61 +608,20 @@ def _write_bundle_into_group(g, meta, ray, spec_products, cols, dump_all_ray_fie
         except TypeError:
             pm.attrs[k] = json.dumps(_jsonable(v))
 
-    # ---- ray (minimal, safe)
-    pref = ("index", "ray", "all", "gas", "grid")
+    _write_original_trident_ray(g, ray_h5_path)
+
+    # ---- ray convenience arrays, copied from the saved Trident ray HDF5.
     rg = g.create_group("ray")
+    _write_ray_convenience_from_h5(rg, ray_h5_path, dump_all_ray_fields=dump_all_ray_fields)
 
-    # dl optional
-    try:
-        dl_f = _pick_field(ray, "dl", pref)
-        rg.create_dataset("dl_code", data=np.asarray(ray.r[dl_f]).astype(float))
-        rg.attrs["dl_field"] = str(dl_f)
-    except Exception:
-        rg.attrs["dl_field"] = "NA"
-
-    # x/y/z explicit to avoid ambiguity
-    x_f = _pick_field(ray, "x", pref)
-    y_f = _pick_field(ray, "y", pref)
-    z_f = _pick_field(ray, "z", pref)
-
-    rg.create_dataset("x_code", data=np.asarray(ray.r[x_f]).astype(float))
-    rg.create_dataset("y_code", data=np.asarray(ray.r[y_f]).astype(float))
-    rg.create_dataset("z_code", data=np.asarray(ray.r[z_f]).astype(float))
-    rg.attrs["x_field"] = str(x_f)
-    rg.attrs["y_field"] = str(y_f)
-    rg.attrs["z_field"] = str(z_f)
-
-    # Optional: dump all ray fields (can bloat files / trigger edge cases).
-    if dump_all_ray_fields:
-        fg = rg.create_group("fields")
-        # Accessing ray.r for everything can still fail; keep it best-effort.
-        rds = _ray_dataset(ray)
-        try:
-            field_list = list(getattr(rds, "field_list", []))
-        except Exception:
-            field_list = []
-        for ft, fn in field_list:
-            try:
-                arr = ray.r[(ft, fn)]
-                fg.create_dataset(f"{ft}__{fn}", data=np.asarray(arr).astype(float))
-            except Exception:
-                continue
-
-    # ---- spectra: raw + lsf
-    sg = g.create_group("spectrum")
-    for tag in ("raw", "lsf"):
-        st = sg.create_group(tag)
-        st.create_dataset("lambda_A", data=np.asarray(spec_products[tag]["lambda_A"]).astype(float))
-        st.create_dataset("flux",     data=np.asarray(spec_products[tag]["flux"]).astype(float))
-        tau = spec_products[tag].get("tau", None)
-        if tau is not None:
-            st.create_dataset("tau", data=np.asarray(tau).astype(float))
+    # ---- spectra: combined + per-line, raw + lsf
+    _write_spectra_groups(g, spec_products)
 
 
-def save_bundle_hdf5(path, meta, ray, spec_products, cols, dump_all_ray_fields: bool = False):
+def save_bundle_hdf5(path, meta, ray, spec_products, cols, dump_all_ray_fields: bool = False, ray_h5_path: Optional[str] = None):
     def _w(f):
         base = f.create_group("bundle")
-        _write_bundle_into_group(base, meta, ray, spec_products, cols, dump_all_ray_fields=dump_all_ray_fields)
+        _write_bundle_into_group(base, meta, ray, spec_products, cols, dump_all_ray_fields=dump_all_ray_fields, ray_h5_path=ray_h5_path)
     atomic_write_h5(path, _w)
 
 
@@ -553,6 +635,7 @@ def append_to_combined(
     globals_once,
     max_retries=3,
     dump_all_ray_fields: bool = False,
+    ray_h5_path: Optional[str] = None,
 ):
     for attempt in range(1, max_retries + 1):
         try:
@@ -578,7 +661,7 @@ def append_to_combined(
                 if group_path in f:
                     del f[group_path]
                 base = f.create_group(group_path)
-                _write_bundle_into_group(base, meta, ray, spec_products, cols, dump_all_ray_fields=dump_all_ray_fields)
+                _write_bundle_into_group(base, meta, ray, spec_products, cols, dump_all_ray_fields=dump_all_ray_fields, ray_h5_path=ray_h5_path)
             return
         except OSError as e:
             time.sleep(0.5)
@@ -645,6 +728,10 @@ def process_run_for_sid(ds, sid, snap, run_label, paths: JobPaths, cfg: SpectraC
         add_noise=bool(cfg.add_noise),
         snr=float(cfg.snr),
         noise_seed=int(cfg.noise_seed),
+        use_peculiar_velocity=True,
+        use_doppler_redshift_only=True,
+        per_line_spectra_saved=True,
+        original_trident_ray_h5_embedded=True,
     )
 
     # Scratch: include pid to avoid collisions if multiple jobs run same SID.
@@ -659,8 +746,9 @@ def process_run_for_sid(ds, sid, snap, run_label, paths: JobPaths, cfg: SpectraC
     # Determine required ions from line list once per run_label
     ions_needed = ions_from_lines(cfg.lines)
 
-    # Optional: dump all ray fields inside bundles/combined
-    dump_all_ray_fields = bool(int(os.environ.get("SPECTRA_DUMP_ALL_RAY_FIELDS", "0")))
+    # Dump all ray fields by default; the original Trident ray HDF5 is also
+    # embedded verbatim into every output HDF5 for lossless downstream use.
+    dump_all_ray_fields = bool(int(os.environ.get("SPECTRA_DUMP_ALL_RAY_FIELDS", "1")))
 
     for j, row in df.iterrows():
         try:
@@ -724,11 +812,15 @@ def process_run_for_sid(ds, sid, snap, run_label, paths: JobPaths, cfg: SpectraC
                 end_ckpch=p1.tolist(),
                 lines=list(cfg.lines),
                 instrument=str(cfg.instrument),
+                use_peculiar_velocity=True,
+                use_doppler_redshift_only=True,
+                original_trident_ray_h5_embedded=True,
+                dump_all_ray_fields=bool(dump_all_ray_fields),
             )
 
             # 1) ALWAYS write spectrum-only first
             spec_path = os.path.join(spectra_dir, f"{tag}_spectrum.h5")
-            save_spectrum_only_h5(spec_path, meta, spec_products)
+            save_spectrum_only_h5(spec_path, meta, spec_products, ray_h5_path=rayfile)
 
             # 2) Best-effort bundle + combined (must not break the run)
             out_dir = os.path.join(rays_dir, f"sightline={sightline_id}", f"mode={mode}", f"alpha={alpha_tag}")
@@ -736,7 +828,7 @@ def process_run_for_sid(ds, sid, snap, run_label, paths: JobPaths, cfg: SpectraC
 
             bundle_path = os.path.join(out_dir, f"{tag}_bundle.h5")
             try:
-                save_bundle_hdf5(bundle_path, meta, ray, spec_products, cols, dump_all_ray_fields=dump_all_ray_fields)
+                save_bundle_hdf5(bundle_path, meta, ray, spec_products, cols, dump_all_ray_fields=dump_all_ray_fields, ray_h5_path=rayfile)
             except Exception as e:
                 with open(os.path.join(logs_dir, "errors.txt"), "a") as f:
                     f.write(f"[BUNDLE_FAIL] {tag}: {type(e).__name__}: {e}\n")
@@ -754,6 +846,7 @@ def process_run_for_sid(ds, sid, snap, run_label, paths: JobPaths, cfg: SpectraC
                     cols,
                     globals_once,
                     dump_all_ray_fields=dump_all_ray_fields,
+                    ray_h5_path=rayfile,
                 )
             except Exception as e:
                 with open(os.path.join(logs_dir, "errors.txt"), "a") as f:

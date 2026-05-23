@@ -12,7 +12,7 @@
 
 # Notes:
 # - Array maps SLURM_ARRAY_TASK_ID -> SID_LIST line number.
-# - Auto-builds SID_LIST from /scratch/tsingh65/TNG50-1_snap99/out_sub_* directories.
+# - Auto-builds SID_LIST from /data/sborthak/m61/cutouts/out_sub_* directories.
 # - By default, includes all discovered SIDs.
 # - Optional skip-if-done logic can be enabled, but defaults to rerun everything.
 
@@ -22,14 +22,14 @@ set -eo pipefail   # intentionally NOT using -u globally (conda hooks + nounset 
 # CONFIG
 # -----------------------------
 SNAP="99"
-RUN_LABELS="L4Rvir"                       # comma-separated if multiple: "L3Rvir,L4Rvir"
+RUN_LABELS="L2Rvir"                       # comma-separated if multiple: "L2Rvir,L3Rvir,L4Rvir"
 FILTER_MODES=("noflip" "flip")
 
 # Must match your local Trident line-name conventions (integer-label / aliases).
 LINES_CSV="Si II 1190,Si II 1193,Si III 1206,N V 1239,Si II 1260,O I 1302,C II 1335,Si IV 1403,H I 1216"
 
 REPO="/home/tsingh65/m61-tng"
-CUTOUT_ROOT="/scratch/tsingh65/TNG50-1_snap99"
+CUTOUT_ROOT="/data/sborthak/m61/cutouts"
 ORIENT_OUT_BASE="/scratch/tsingh65/m61-tng/outputs"
 
 # Leave empty to include all discovered SIDs. Set a numeric SID to exclude one explicitly.
@@ -68,7 +68,7 @@ if [[ "${REBUILD_SID_LIST}" -eq 1 || ! -f "${SID_LIST}" ]]; then
   echo "[INFO] Generating SID_LIST: ${SID_LIST}"
   mkdir -p "$(dirname "${SID_LIST}")"
 
-  # Find directories like: /scratch/tsingh65/TNG50-1_snap99/out_sub_488530
+  # Find directories like: /data/sborthak/m61/cutouts/out_sub_488530
   # Extract numeric SID and sort unique.
   find "${CUTOUT_ROOT}" -maxdepth 1 -type d -name "out_sub_*" -printf "%f\n" \
     | sed -E 's/^out_sub_([0-9]+)$/\1/' \
@@ -142,6 +142,7 @@ export HDF5_USE_FILE_LOCKING=FALSE
 export HDF5_DISABLE_VERSION_CHECK=2
 export MPLBACKEND=Agg
 export PYTHONNOUSERSITE=1
+export SPECTRA_DUMP_ALL_RAY_FIELDS=1
 unset PYTHONPATH || true
 
 export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK:-1}"
@@ -183,6 +184,7 @@ echo "REPO=${REPO}"
 echo "ORIENT_OUT_BASE=${ORIENT_OUT_BASE}"
 echo "LINES=${LINES_CSV}"
 echo "TRIDENT_RAY_TMP=${TRIDENT_RAY_TMP}"
+echo "SPECTRA_DUMP_ALL_RAY_FIELDS=${SPECTRA_DUMP_ALL_RAY_FIELDS}"
 echo "CONDA_PREFIX=${CONDA_PREFIX}"
 echo "python=$(command -v python)"
 echo "================="
