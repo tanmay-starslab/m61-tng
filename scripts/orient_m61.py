@@ -17,12 +17,14 @@ This script:
   - loads each subhalo cutout from:   --cutout-root /scratch/.../out_sub_<SID>/
   - reads group catalog from:         --groupcat-base /scratch/.../groups_099/
   - computes orientation bases using either:
-        * PCA v3 (default)
+        * inner stellar PCA v3 (default; PartType4 stars within 2*rhalf_star)
         * stellar spin (optional override list)
   - applies the OBS inc + PA to set the on-sky disk orientation
   - for each sightline in the obs CSV (each row can be a sightline):
-        uses its rho,phi to place the impact point in the observer plane
-  - loops over alpha rotations about the (post-inc) disk normal
+        if RA/Dec columns are present, rotates the QSO sky offset into the
+        observed galaxy-PA major-axis frame and uses that fixed sky-plane point
+  - loops over alpha rotations that represent spinning the galaxy about its
+    disk normal while keeping the observer/QSO sky-plane pair fixed
   - writes rays CSVs and small JSON headers per SID and per run length
 
 Important convention notes:
@@ -39,6 +41,10 @@ Outputs (under --out-base):
       analysis/
           debug_sid<SID>_snap99.png
           orientation_sid<SID>_snap99.json
+      rays_and_recipes_sid<SID>_snap99_L2Rvir/
+          rays_sid<SID>.csv
+          orient_peralpha_sid<SID>.csv
+          orient_header_sid<SID>.json
       rays_and_recipes_sid<SID>_snap99_L3Rvir/
           rays_sid<SID>.csv
           orient_peralpha_sid<SID>.csv
@@ -230,6 +236,23 @@ def sightline_endpoints_codeunits(center_ckpch, R_cur, rho_ckpch, phi_deg, half_
     p1 = center_ckpch + r_nat + half_len_ckpch * L_nat
     anchor = center_ckpch + r_nat
     return p0, p1, anchor, L_nat
+
+def fixed_observer_galaxy_alpha_rotation(R_base, axis, alpha_deg):
+    """
+    Return observer->native rotation for the corrected alpha convention.
+
+    The observer/QSO coordinates are fixed in the sky plane for all alpha:
+        r_obs = [rho cos(phi), rho sin(phi), 0]
+
+    Alpha is interpreted as an in-plane spin of the galaxy about its disk normal.
+    To represent a galaxy rotated by +alpha using the unrotated simulation
+    coordinates, we apply the inverse active rotation to the ray frame:
+        R_cur = R_base @ Rodrigues(axis, -alpha)
+
+    Thus the saved native-coordinate endpoints can change with alpha, but in the
+    alpha-specific observer frame the QSO is always at the same (rho, phi).
+    """
+    return R_base @ rodrigues_axis_angle(axis, math.radians(-float(alpha_deg)))
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -452,7 +475,7 @@ def build_R_bases(normal_vec: np.ndarray, inc_deg: float, pa_deg: float) -> Tupl
     return R_base_noflip, R_base_flip, n_hat, -n_hat
 
 def build_normal_from_pca_v3(Xs_rel_ckpch: np.ndarray, Ms_1e10: np.ndarray, h: float) -> np.ndarray:
-    """PCA v3 from stellar positions (in kpc), weighted by stellar masses."""
+    """PCA v3 from selected stellar positions (in kpc), weighted by stellar masses."""
     Xs_kpc  = Xs_rel_ckpch / h
     Ms_msun = Ms_1e10 * 1e10 / h
     _, evecs3, _ = pca3_weighted(Xs_kpc, Ms_msun)
@@ -703,8 +726,13 @@ def load_obs_geometry(obs_csv: str) -> Dict[str, Any]:
     if not np.isfinite(pa_deg):
         raise RuntimeError(f"pa is not finite (from column '{pa_col}'): {row0[pa_col]}")
 
+    use_radec_qso = all(c in colmap for c in [
+        "ra_deg", "dec_deg", "qso_ra_deg", "qso_dec_deg", "distance_mpc"
+    ])
+
     # Build per-row sightlines
     sightlines: List[Dict[str, Any]] = []
+    sightline_meta: List[Dict[str, Any]] = []
     for idx, row in df.iterrows():
         sid = None
         for cand in ["sightline_id", "sightline", "qso", "qso_name", "target", "id"]:
@@ -714,13 +742,47 @@ def load_obs_geometry(obs_csv: str) -> Dict[str, Any]:
         if sid is None:
             sid = f"sl_{idx:03d}"
 
-        rho_kpc = to_float(row[rho_col])
-        phi_deg = to_float(row[phi_col])
+        if use_radec_qso:
+            dec0 = math.radians(to_float(row[colmap["dec_deg"]]))
+            decq = math.radians(to_float(row[colmap["qso_dec_deg"]]))
+            kpc_per_deg = to_float(row[colmap["distance_mpc"]]) * 1000.0 * math.pi / 180.0
+            east_kpc = (to_float(row[colmap["qso_ra_deg"]]) - to_float(row[colmap["ra_deg"]])) * math.cos(0.5 * (dec0 + decq)) * kpc_per_deg
+            north_kpc = (to_float(row[colmap["qso_dec_deg"]]) - to_float(row[colmap["dec_deg"]])) * kpc_per_deg
+            pa = math.radians(to_float(row[pa_col]))
+            major = np.array([math.sin(pa), math.cos(pa)])
+            minor = np.array([-math.cos(pa), math.sin(pa)])
+            sky = np.array([east_kpc, north_kpc])
+            x_major = float(np.dot(sky, major))
+            y_minor = float(np.dot(sky, minor))
+            rho_kpc = float(np.hypot(x_major, y_minor))
+            phi_deg = float(np.degrees(np.arctan2(y_minor, x_major)))
+            sightline_meta.append({
+                "sightline_id": sid,
+                "east_kpc": float(east_kpc),
+                "north_kpc": float(north_kpc),
+                "x_qso_major_kpc": x_major,
+                "y_qso_minor_kpc": y_minor,
+                "rho_from_radec_kpc": rho_kpc,
+                "phi_major_frame_deg": phi_deg,
+                "rho_table_kpc": to_float(row[rho_col]),
+                "theta_table_deg": to_float(row[phi_col]),
+                "PA_deg_original": to_float(row[pa_col]),
+            })
+        else:
+            rho_kpc = to_float(row[rho_col])
+            phi_deg = to_float(row[phi_col])
 
         if not (np.isfinite(rho_kpc) and np.isfinite(phi_deg)):
             continue
 
         sl = {"sightline_id": sid, "rho_kpc": rho_kpc, "phi_deg": phi_deg}
+        if use_radec_qso:
+            sl.update({
+                "x_qso_major_kpc": sightline_meta[-1]["x_qso_major_kpc"],
+                "y_qso_minor_kpc": sightline_meta[-1]["y_qso_minor_kpc"],
+                "rho_table_kpc": sightline_meta[-1]["rho_table_kpc"],
+                "PA_deg_original": sightline_meta[-1]["PA_deg_original"],
+            })
         if rvir_col is not None:
             rv = to_float(row[rvir_col])
             if np.isfinite(rv):
@@ -734,7 +796,10 @@ def load_obs_geometry(obs_csv: str) -> Dict[str, Any]:
 
     obs: Dict[str, Any] = {
         "inc_deg": float(inc_deg),
-        "pa_deg": float(pa_deg),
+        "pa_deg": 0.0 if use_radec_qso else float(pa_deg),
+        "pa_deg_original": float(pa_deg),
+        "qso_geometry_mode": "radec_rotated_to_major_axis_frame" if use_radec_qso else "rho_phi_columns",
+        "sightline_geometry_rows": sightline_meta,
         "sightlines": sightlines,
     }
 
@@ -924,7 +989,7 @@ def process_subhalo(
     alpha_step = int(cfg["ALPHA_STEP"])
     alphas = list(range(0, 360, alpha_step))
 
-    run_specs = [("L3Rvir", 1.5), ("L4Rvir", 2.0)]
+    run_specs = [("L2Rvir", 1.0), ("L3Rvir", 1.5), ("L4Rvir", 2.0)]
 
     summary_row = {
         "SubhaloID": sid,
@@ -963,8 +1028,7 @@ def process_subhalo(
                 ("noflip", R_base_noflip, n_hat),
                 ("flip",   R_base_flip,   n_hat_flip),
             ]:
-                S_alpha = rodrigues_axis_angle(axis, math.radians(alpha))
-                R_cur = R_base @ S_alpha
+                R_cur = fixed_observer_galaxy_alpha_rotation(R_base, axis, alpha)
 
                 ey_obs = np.array([0.0, 1.0, 0.0])
                 ez_obs = np.array([0.0, 0.0, 1.0])
@@ -975,6 +1039,7 @@ def process_subhalo(
                     "alpha_deg": alpha,
                     "mode": mode,
                     "orientation_method": method,
+                    "alpha_convention": "fixed_observer_qso__galaxy_rotated_about_disk_normal",
                     "obs_inc_deg": inc_deg,
                     "obs_pa_deg_used": pa_deg,
                     "los_x": float(normal_nat[0]),
@@ -1004,6 +1069,7 @@ def process_subhalo(
                         "alpha_deg": alpha,
                         "mode": mode,
                         "orientation_method": method,
+                        "alpha_convention": "fixed_observer_qso__galaxy_rotated_about_disk_normal",
                         "obs_inc_deg": inc_deg,
                         "obs_pa_deg_used": pa_deg,
                         "rho_kpc": rho_kpc,
@@ -1048,6 +1114,12 @@ def process_subhalo(
                 "obs_pa_deg_used": float(pa_deg),
                 "PA_FROM_NORTH": bool(cfg["PA_FROM_NORTH"]),
                 "orientation_method": method,
+                "alpha_convention": "fixed_observer_qso__galaxy_rotated_about_disk_normal",
+                "alpha_note": (
+                    "Observer/QSO sky-plane coordinates are fixed for all alpha. "
+                    "Alpha is a galaxy spin about the PCA disk normal; native ray "
+                    "endpoints use the inverse rotation to sample the unrotated cutout."
+                ),
                 "normal_used_hat": unit(normal_vec).tolist(),
                 "sightlines": obs["sightlines"],
                 "alpha_step_deg": alpha_step,
@@ -1078,7 +1150,7 @@ def parse_args():
     p.add_argument("--no-fig", action="store_true", help="Disable debug figures to reduce runtime.")
     p.add_argument("--remove-bulk-vel", action="store_true", help="Remove stellar bulk velocity for stellar spin.")
     p.add_argument("--no-rhalf-aperture", action="store_true", help="Disable rhalf aperture cut.")
-    p.add_argument("--rhalf-multiplier", type=float, default=10.0)
+    p.add_argument("--rhalf-multiplier", type=float, default=2.0)
 
     p.add_argument("--default-rvir-kpc", type=float, default=300.0)
 

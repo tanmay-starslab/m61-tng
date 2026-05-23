@@ -52,7 +52,7 @@ def parse_args():
     p.add_argument("--orient-out-base", required=True, help="Same --out-base used in orient_m61.py")
     p.add_argument("--spectra-out-base", default="", help="If empty, writes under orient-out-base/sid<SID>/")
 
-    p.add_argument("--run-labels", default="L3Rvir,L4Rvir")
+    p.add_argument("--run-labels", default="L2Rvir,L3Rvir,L4Rvir")
     p.add_argument("--filter-mode", choices=["noflip", "flip"], default=None)
 
     p.add_argument("--alpha-keep", default="", help="Comma-separated alpha list, e.g. '0,90'")
@@ -62,6 +62,8 @@ def parse_args():
     p.add_argument("--lines", default="H I 1216,C II 1335,Si III 1206")
     p.add_argument("--instrument", default="COS-G130M")
     p.add_argument("--zoom-half-A", type=float, default=3.0)
+    p.add_argument("--no-doppler-only", action="store_true",
+                   help="Disable Doppler-only redshifting and use Trident's default effective redshift.")
     p.add_argument("--no-plots", action="store_true")
     p.add_argument("--verbose", action="store_true")
 
@@ -116,6 +118,7 @@ def main():
         instrument=a.instrument,
         zoom_half_A=float(a.zoom_half_A),
         make_plots=(not a.no_plots),
+        use_doppler_redshift_only=(not a.no_doppler_only),
     )
 
     run_all_runs_for_sid(paths, params, cfg)
