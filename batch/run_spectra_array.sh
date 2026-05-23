@@ -5,14 +5,14 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=30G
-#SBATCH --time=1-18:00:00
+#SBATCH --time=1-22:00:00
 #SBATCH --output=/scratch/tsingh65/m61-tng/logs/spec_arr_%A_%a.out
 #SBATCH --error=/scratch/tsingh65/m61-tng/logs/spec_arr_%A_%a.err
 #SBATCH --array=1-1   # <-- OVERRIDE AT SUBMIT TIME (see bottom)
 
 # Notes:
 # - Array maps SLURM_ARRAY_TASK_ID -> SID_LIST line number.
-# - Auto-builds SID_LIST from /scratch/tsingh65/TNG50-1_snap99/out_sub_* directories.
+# - Auto-builds SID_LIST from /data/sborthak/m61/cutouts/out_sub_* directories.
 # - By default, includes all discovered SIDs.
 # - Optional skip-if-done logic can be enabled, but defaults to rerun everything.
 
@@ -22,14 +22,15 @@ set -eo pipefail   # intentionally NOT using -u globally (conda hooks + nounset 
 # CONFIG
 # -----------------------------
 SNAP="99"
-RUN_LABELS="L4Rvir"                       # comma-separated if multiple: "L3Rvir,L4Rvir"
+RUN_LABELS="L2Rvir"         # supported: L2Rvir,L3Rvir,L4Rvir
 FILTER_MODES=("noflip" "flip")
 
 # Must match your local Trident line-name conventions (integer-label / aliases).
 LINES_CSV="Si II 1190,Si II 1193,Si III 1206,N V 1239,Si II 1260,O I 1302,C II 1335,Si IV 1403,H I 1216"
 
 REPO="/home/tsingh65/m61-tng"
-CUTOUT_ROOT="/scratch/tsingh65/TNG50-1_snap99"
+PATCHED_TRIDENT_REPO="/home/tsingh65/src/trident"
+CUTOUT_ROOT="/data/sborthak/m61/cutouts"
 ORIENT_OUT_BASE="/scratch/tsingh65/m61-tng/outputs"
 
 # Leave empty to include all discovered SIDs. Set a numeric SID to exclude one explicitly.
@@ -65,17 +66,39 @@ fi
 # BUILD SID LIST (FROM CUTOUT DIRECTORIES)
 # -----------------------------
 if [[ "${REBUILD_SID_LIST}" -eq 1 || ! -f "${SID_LIST}" ]]; then
-  echo "[INFO] Generating SID_LIST: ${SID_LIST}"
   mkdir -p "$(dirname "${SID_LIST}")"
+  SID_LIST_LOCK="${SID_LIST}.lock"
 
-  # Find directories like: /scratch/tsingh65/TNG50-1_snap99/out_sub_488530
-  # Extract numeric SID and sort unique.
-  find "${CUTOUT_ROOT}" -maxdepth 1 -type d -name "out_sub_*" -printf "%f\n" \
-    | sed -E 's/^out_sub_([0-9]+)$/\1/' \
-    | awk '/^[0-9]+$/' \
-    | sort -n -u > "${SID_LIST}"
+  if mkdir "${SID_LIST_LOCK}" 2>/dev/null; then
+    trap 'rmdir "${SID_LIST_LOCK}" 2>/dev/null || true' EXIT
+    echo "[INFO] Generating SID_LIST: ${SID_LIST}"
+    SID_LIST_TMP="${SID_LIST}.tmp.${SLURM_JOB_ID:-manual}.${SLURM_ARRAY_TASK_ID:-0}"
 
-  echo "[INFO] WROTE ${SID_LIST}  N=$(wc -l < "${SID_LIST}")"
+    # Find directories like: /data/sborthak/m61/cutouts/out_sub_488530
+    # Extract numeric SID and sort unique.
+    find "${CUTOUT_ROOT}" -maxdepth 1 -type d -name "out_sub_*" -printf "%f\n" \
+      | sed -E 's/^out_sub_([0-9]+)$/\1/' \
+      | awk '/^[0-9]+$/' \
+      | sort -n -u > "${SID_LIST_TMP}"
+
+    mv "${SID_LIST_TMP}" "${SID_LIST}"
+    echo "[INFO] WROTE ${SID_LIST}  N=$(wc -l < "${SID_LIST}")"
+    rmdir "${SID_LIST_LOCK}" 2>/dev/null || true
+    trap - EXIT
+  else
+    echo "[INFO] Waiting for SID_LIST rebuild lock: ${SID_LIST_LOCK}"
+    for _wait_i in $(seq 1 150); do
+      if [[ ! -d "${SID_LIST_LOCK}" && -s "${SID_LIST}" ]]; then
+        break
+      fi
+      sleep 2
+    done
+    if [[ -d "${SID_LIST_LOCK}" || ! -s "${SID_LIST}" ]]; then
+      echo "FATAL: timed out waiting for SID_LIST rebuild: ${SID_LIST}"
+      exit 2
+    fi
+    echo "[INFO] Reusing rebuilt SID_LIST: ${SID_LIST}  N=$(wc -l < "${SID_LIST}")"
+  fi
 fi
 
 # -----------------------------
@@ -167,6 +190,7 @@ conda activate trident
 
 export LD_LIBRARY_PATH="${CONDA_PREFIX}/lib:${LD_LIBRARY_PATH:-}"
 export PATH="${CONDA_PREFIX}/bin:${PATH}"
+export PYTHONPATH="${PATCHED_TRIDENT_REPO}:${PYTHONPATH:-}"
 
 # -----------------------------
 # LOG HEADER
@@ -180,16 +204,23 @@ echo "ARRAY_TASK: ${SLURM_ARRAY_TASK_ID:-NA}"
 echo "SID=${SID} SNAP=${SNAP} RUN_LABELS=${RUN_LABELS}"
 echo "CUTOUT_H5=${CUTOUT_H5}"
 echo "REPO=${REPO}"
+echo "PATCHED_TRIDENT_REPO=${PATCHED_TRIDENT_REPO}"
 echo "ORIENT_OUT_BASE=${ORIENT_OUT_BASE}"
 echo "LINES=${LINES_CSV}"
+echo "DOPPLER_ONLY_REDSHIFT=True"
 echo "TRIDENT_RAY_TMP=${TRIDENT_RAY_TMP}"
 echo "CONDA_PREFIX=${CONDA_PREFIX}"
 echo "python=$(command -v python)"
 echo "================="
 
 python - <<'PY'
+import inspect
 import trident, yt
 print("trident:", getattr(trident, "__version__", "unknown"))
+print("trident_file:", getattr(trident, "__file__", "unknown"))
+sig = inspect.signature(trident.SpectrumGenerator.make_spectrum)
+print("supports_use_doppler_redshift_only:", "use_doppler_redshift_only" in sig.parameters)
+print("use_doppler_redshift_only_requested:", True)
 print("yt:", yt.__version__)
 PY
 
