@@ -41,7 +41,9 @@ import json
 import time
 import argparse
 import traceback
+import inspect
 import re
+import shutil
 from dataclasses import dataclass, asdict
 from typing import Optional, List, Sequence, Tuple, Any, Dict, Mapping
 
@@ -77,7 +79,7 @@ class JobParams:
 
     def __post_init__(self):
         if self.run_labels is None:
-            self.run_labels = ["L3Rvir", "L4Rvir"]
+            self.run_labels = ["L2Rvir", "L3Rvir", "L4Rvir"]
 
 
 # IMPORTANT:
@@ -95,6 +97,7 @@ class SpectraConfig:
 
         # New: instrument realism toggles
         apply_lsf: bool = True,
+        use_doppler_redshift_only: bool = True,
 
         # New: optional noise model (OFF by default)
         add_noise: bool = False,
@@ -110,6 +113,7 @@ class SpectraConfig:
         self.make_plots = bool(make_plots)
 
         self.apply_lsf = bool(apply_lsf)
+        self.use_doppler_redshift_only = bool(use_doppler_redshift_only)
         self.add_noise = bool(add_noise)
         self.snr = float(snr) if snr is not None else 0.0
         self.noise_seed = int(noise_seed) if noise_seed is not None else 0
@@ -199,6 +203,18 @@ def ions_from_lines(lines: Sequence[str]) -> List[str]:
     return out
 
 
+def run_label_lengths(run_label: str) -> Tuple[float, float]:
+    """
+    Return (half_len_Rvir, total_len_Rvir) for supported run labels.
+    """
+    specs = {
+        "L2Rvir": (1.0, 2.0),
+        "L3Rvir": (1.5, 3.0),
+        "L4Rvir": (2.0, 4.0),
+    }
+    return specs.get(str(run_label), (np.nan, np.nan))
+
+
 def ion_to_trident_nd_field(ion: str) -> Optional[Tuple[str, str]]:
     """
     Map an ion like 'Si II' to Trident's number-density field name.
@@ -249,11 +265,22 @@ def make_ray(
 
     Therefore, we explicitly include any required ion number-density fields in `fields=...`.
     """
-    p0 = ds.arr(np.asarray(p0_ckpch_abs, float), "code_length")
-    p1 = ds.arr(np.asarray(p1_ckpch_abs, float), "code_length")
+    # Trident mutates these arrays while converting units, so force writable copies.
+    p0 = ds.arr(np.array(p0_ckpch_abs, dtype=float, copy=True), "code_length")
+    p1 = ds.arr(np.array(p1_ckpch_abs, dtype=float, copy=True), "code_length")
 
     # Ensure metallicity exists on the parent dataset before we sample it.
     ensure_metallicity_field(ds)
+
+    # Some yt frontends expose read-only domain edge arrays, while Trident's
+    # LightRay converts those arrays in-place.  Give Trident writable copies.
+    for attr in ("domain_left_edge", "domain_right_edge"):
+        try:
+            edge = getattr(ds, attr)
+            writable_edge = ds.arr(np.array(edge.to("code_length").value, dtype=float, copy=True), "code_length")
+            setattr(ds, attr, writable_edge)
+        except Exception:
+            pass
 
     ray_fields = [
         ("gas", "density"),
@@ -309,20 +336,50 @@ def _maybe_add_noise(flux: np.ndarray, snr: float, seed: int = 0) -> np.ndarray:
     return np.clip(noisy, 0.0, 1.0)
 
 
-def _line_key(line: str) -> str:
-    key = re.sub(r"[^A-Za-z0-9]+", "_", str(line).strip()).strip("_")
-    return key or "line"
+def safe_line_name(line: str) -> str:
+    """
+    Convert Trident line names like "Si II 1190" into stable HDF5 group names.
+    """
+    return re.sub(r"[^A-Za-z0-9]+", "_", str(line).strip()).strip("_")
+
+
+def _trident_make_spectrum_kwargs(cfg: SpectraConfig) -> Dict[str, Any]:
+    kwargs = {
+        "use_peculiar_velocity": True,
+        "use_doppler_redshift_only": bool(cfg.use_doppler_redshift_only),
+    }
+
+    try:
+        sig = inspect.signature(trident.SpectrumGenerator.make_spectrum)
+        supports_doppler_only = "use_doppler_redshift_only" in sig.parameters
+    except Exception:
+        supports_doppler_only = False
+
+    if kwargs["use_doppler_redshift_only"] and not supports_doppler_only:
+        raise RuntimeError(
+            "The imported Trident does not support use_doppler_redshift_only. "
+            f"trident.__file__={getattr(trident, '__file__', 'unknown')}. "
+            "Use the patched source tree, e.g. /home/tsingh65/src/trident."
+        )
+
+    if not supports_doppler_only:
+        kwargs.pop("use_doppler_redshift_only", None)
+    return kwargs
+
+
+def _single_spectrum_product(ray, lines, cfg: SpectraConfig) -> Dict[str, Mapping[str, Any]]:
+    """
+    Returns:
+      {
+        "raw": {"lambda_A":..., "flux":..., "tau":...},
+        "lsf": {"lambda_A":..., "flux":..., "tau":...},
+      }
 
 
 def _single_spectrum_product(ray, lines, cfg: SpectraConfig) -> Dict[str, Any]:
     line_list = [lines] if isinstance(lines, str) else list(lines)
     sg = trident.SpectrumGenerator(cfg.instrument)
-    sg.make_spectrum(
-        ray,
-        lines=line_list,
-        use_peculiar_velocity=True,
-        use_doppler_redshift_only=True,
-    )
+    sg.make_spectrum(ray, lines=lines, **_trident_make_spectrum_kwargs(cfg))
 
     # Grab tau (if available) BEFORE LSF; tau is an optical depth grid product.
     lam0, flux0, tau0 = _get_sg_arrays(sg)
@@ -360,50 +417,37 @@ def _single_spectrum_product(ray, lines, cfg: SpectraConfig) -> Dict[str, Any]:
 
 def build_spectrum_products(ray, lines, cfg: SpectraConfig) -> Dict[str, Mapping[str, Any]]:
     """
-    Returns:
-      {
-        "raw": {"lambda_A":..., "flux":..., "tau":...},
-        "lsf": {"lambda_A":..., "flux":..., "tau":...},
-        "by_line": {
-          "Si_II_1190": {"line": "Si II 1190", "raw": {...}, "lsf": {...}},
-          ...
-        },
-      }
+    Build combined/full spectrum products plus one separate product per line.
 
-    raw flux is exp(-tau) when tau exists, else fallback to current sg.flux_field.
-    lsf flux is sg.flux_field after apply_lsf() if enabled, else equal to raw/sg output.
-    Trident is called with use_peculiar_velocity=True and use_doppler_redshift_only=True.
-    Optional noise can be applied to raw and/or lsf consistently.
+    Existing combined output remains at /spectrum/raw and /spectrum/lsf.  New
+    per-line products are written under /spectrum/individual_lines/<safe_name>.
     """
     combined = _single_spectrum_product(ray, lines, cfg)
 
-    by_line = {}
-    seen_keys = set()
+    individual_lines: Dict[str, Mapping[str, Any]] = {}
     for line in lines:
-        key = _line_key(line)
-        if key in seen_keys:
-            suffix = 2
-            while f"{key}_{suffix}" in seen_keys:
-                suffix += 1
-            key = f"{key}_{suffix}"
-        seen_keys.add(key)
+        key = safe_line_name(line)
         product = _single_spectrum_product(ray, [line], cfg)
-        product["line"] = str(line)
-        by_line[key] = product
+        product["meta"] = {
+            "line_name": str(line),
+            "safe_line_name": key,
+        }
+        individual_lines[key] = product
 
     return {
         "raw": combined["raw"],
         "lsf": combined["lsf"],
-        "by_line": by_line,
+        "individual_lines": individual_lines,
         "meta": {
             "instrument": str(cfg.instrument),
             "apply_lsf": bool(cfg.apply_lsf),
             "use_peculiar_velocity": True,
-            "use_doppler_redshift_only": True,
-            "per_line_spectra_saved": True,
+            "use_doppler_redshift_only": bool(cfg.use_doppler_redshift_only),
             "add_noise": bool(cfg.add_noise),
             "snr": float(cfg.snr),
             "noise_seed": int(cfg.noise_seed),
+            "trident_version": str(getattr(trident, "__version__", "unknown")),
+            "trident_file": str(getattr(trident, "__file__", "unknown")),
         },
     }
 
@@ -469,95 +513,57 @@ def _jsonable(v: Any) -> Any:
         return str(v)
 
 
-def _write_product_group(parent, name: str, product: Mapping[str, Any]) -> None:
-    g = parent.create_group(name)
-    g.create_dataset("lambda_A", data=np.asarray(product["lambda_A"]).astype(float))
-    g.create_dataset("flux", data=np.asarray(product["flux"]).astype(float))
-    tau = product.get("tau", None)
-    if tau is not None:
-        g.create_dataset("tau", data=np.asarray(tau).astype(float))
-
-
-def _write_spectra_groups(parent, spec_products: Mapping[str, Any]) -> None:
-    gs = parent.create_group("spectrum")
-    for tag in ("raw", "lsf"):
-        _write_product_group(gs, tag, spec_products[tag])
-
-    bl = parent.create_group("spectrum_by_line")
-    for key, product in spec_products.get("by_line", {}).items():
-        lg = bl.create_group(key)
-        lg.attrs["line"] = str(product.get("line", key))
-        for tag in ("raw", "lsf"):
-            _write_product_group(lg, tag, product[tag])
-
-
-def _copy_h5_node(src, dst):
-    for k, v in src.attrs.items():
+def _write_attrs(g, attrs: Mapping[str, Any]) -> None:
+    for k, v in attrs.items():
         try:
-            dst.attrs[k] = v
+            g.attrs[k] = v
         except TypeError:
-            dst.attrs[k] = json.dumps(_jsonable(v))
-
-    for name, item in src.items():
-        if isinstance(item, h5py.Dataset):
-            src.copy(item, dst, name=name)
-        elif isinstance(item, h5py.Group):
-            child = dst.create_group(name)
-            _copy_h5_node(item, child)
+            g.attrs[k] = json.dumps(_jsonable(v))
 
 
-def _write_original_trident_ray(parent, ray_h5_path: Optional[str]) -> None:
-    if not ray_h5_path:
-        parent.attrs["original_trident_ray_h5_embedded"] = False
-        parent.attrs["original_trident_ray_h5_error"] = "No ray_h5_path was supplied."
-        return
-    if not os.path.isfile(ray_h5_path):
-        parent.attrs["original_trident_ray_h5_embedded"] = False
-        parent.attrs["original_trident_ray_h5_error"] = f"Missing ray_h5_path: {ray_h5_path}"
-        return
-
-    trg = parent.create_group("original_trident_ray_h5")
-    with h5py.File(ray_h5_path, "r") as src:
-        _copy_h5_node(src, trg)
-    parent.attrs["original_trident_ray_h5_embedded"] = True
+def _write_one_spectrum_group(parent, products: Mapping[str, Any]) -> None:
+    for tag in ("raw", "lsf"):
+        g = parent.create_group(tag)
+        g.create_dataset("lambda_A", data=np.asarray(products[tag]["lambda_A"]).astype(float))
+        g.create_dataset("flux", data=np.asarray(products[tag]["flux"]).astype(float))
+        tau = products[tag].get("tau", None)
+        if tau is not None:
+            g.create_dataset("tau", data=np.asarray(tau).astype(float))
 
 
-def _safe_dataset_name(name: str) -> str:
-    return re.sub(r"[^A-Za-z0-9_.-]+", "__", str(name).strip("/")) or "field"
+def _write_spectrum_products_group(parent, spec_products: Mapping[str, Any]) -> None:
+    _write_one_spectrum_group(parent, spec_products)
+
+    individual = spec_products.get("individual_lines", {})
+    lines_group = parent.create_group("individual_lines")
+    for safe_name, line_products in individual.items():
+        lg = lines_group.create_group(str(safe_name))
+        if "meta" in line_products:
+            _write_attrs(lg.create_group("meta"), line_products["meta"])
+        _write_one_spectrum_group(lg, line_products)
 
 
-def _write_ray_convenience_from_h5(rg, ray_h5_path: Optional[str], dump_all_ray_fields: bool) -> None:
-    """
-    Write convenient flat ray arrays without touching yt's data container.
-    The authoritative, lossless ray copy is original_trident_ray_h5.
-    """
-    if not ray_h5_path or not os.path.isfile(ray_h5_path):
-        rg.attrs["convenience_source"] = "missing_original_ray_h5"
+def _copy_h5_root_into_group(src_path: str, dest_group) -> None:
+    dest_group.attrs["source_file"] = str(src_path)
+    if not src_path or not os.path.isfile(src_path):
+        dest_group.attrs["copy_status"] = "missing_source"
         return
 
-    with h5py.File(ray_h5_path, "r") as src:
-        grid = src.get("grid", None)
-        if grid is None:
-            rg.attrs["convenience_source"] = "original_ray_h5_without_grid_group"
-            return
-
-        rg.attrs["convenience_source"] = "original_trident_ray_h5/grid"
-        for name, out_name in (("dl", "dl_code"), ("x", "x_code"), ("y", "y_code"), ("z", "z_code")):
-            if name in grid:
-                rg.create_dataset(out_name, data=grid[name][()])
-                rg.attrs[f"{out_name}_source"] = f"grid/{name}"
-
-        if dump_all_ray_fields:
-            fg = rg.create_group("fields")
-            for name, item in grid.items():
-                if not isinstance(item, h5py.Dataset):
-                    continue
-                out_name = _safe_dataset_name(f"grid__{name}")
-                fg.create_dataset(out_name, data=item[()])
-                fg[out_name].attrs["source_path"] = f"grid/{name}"
+    try:
+        with h5py.File(src_path, "r") as src:
+            for k, v in src.attrs.items():
+                try:
+                    dest_group.attrs[k] = v
+                except TypeError:
+                    dest_group.attrs[k] = json.dumps(_jsonable(v))
+            for key in src.keys():
+                src.copy(key, dest_group, name=key)
+        dest_group.attrs["copy_status"] = "ok"
+    except Exception as exc:
+        dest_group.attrs["copy_status"] = f"failed: {type(exc).__name__}: {exc}"
 
 
-def save_spectrum_only_h5(path, meta: dict, spec_products: dict, ray_h5_path: Optional[str] = None) -> None:
+def save_spectrum_only_h5(path, meta: dict, spec_products: dict) -> None:
     """
     Minimal, robust output:
       - combined raw/lsf: lambda + flux + tau (if present)
@@ -567,55 +573,50 @@ def save_spectrum_only_h5(path, meta: dict, spec_products: dict, ray_h5_path: Op
     """
     def _w(f):
         mg = f.create_group("meta")
-        for k, v in meta.items():
-            try:
-                mg.attrs[k] = v
-            except TypeError:
-                mg.attrs[k] = json.dumps(_jsonable(v))
+        _write_attrs(mg, meta)
 
         pm = f.create_group("product_meta")
-        for k, v in spec_products.get("meta", {}).items():
-            try:
-                pm.attrs[k] = v
-            except TypeError:
-                pm.attrs[k] = json.dumps(_jsonable(v))
+        _write_attrs(pm, spec_products.get("meta", {}))
 
-        _write_spectra_groups(f, spec_products)
-        _write_original_trident_ray(f, ray_h5_path)
+        gs = f.create_group("spectrum")
+        _write_spectrum_products_group(gs, spec_products)
 
     atomic_write_h5(path, _w)
 
 
 def _write_bundle_into_group(g, meta, ray, spec_products, cols, dump_all_ray_fields: bool = False, ray_h5_path: Optional[str] = None):
     mg = g.create_group("meta")
-    for k, v in meta.items():
-        try:
-            mg.attrs[k] = v
-        except TypeError:
-            mg.attrs[k] = json.dumps(_jsonable(v))
+    _write_attrs(mg, meta)
 
     cg = g.create_group("columns")
-    for k, v in cols.items():
-        try:
-            cg.attrs[k] = v
-        except TypeError:
-            cg.attrs[k] = json.dumps(_jsonable(v))
+    _write_attrs(cg, cols)
 
     pm = g.create_group("product_meta")
-    for k, v in spec_products.get("meta", {}).items():
-        try:
-            pm.attrs[k] = v
-        except TypeError:
-            pm.attrs[k] = json.dumps(_jsonable(v))
+    _write_attrs(pm, spec_products.get("meta", {}))
+
+    # Preserve the complete Trident-written ray file inside bundle/combined
+    # outputs, so downstream analysis can recover every field Trident saved.
+    original_ray_path = str(meta.get("original_trident_ray_h5", ""))
+    _copy_h5_root_into_group(original_ray_path, g.create_group("original_trident_ray"))
 
     _write_original_trident_ray(g, ray_h5_path)
 
-    # ---- ray convenience arrays, copied from the saved Trident ray HDF5.
-    rg = g.create_group("ray")
-    _write_ray_convenience_from_h5(rg, ray_h5_path, dump_all_ray_fields=dump_all_ray_fields)
+    # dl optional
+    try:
+        dl_f = _pick_field(ray, "dl", pref)
+        rg.create_dataset("dl_code", data=np.asarray(ray.r[dl_f]).astype(float))
+        rg.attrs["dl_field"] = str(dl_f)
+    except Exception:
+        rg.attrs["dl_field"] = "NA"
 
-    # ---- spectra: combined + per-line, raw + lsf
-    _write_spectra_groups(g, spec_products)
+    # Full ray data are preserved above in /original_trident_ray.  Avoid
+    # regenerating derived coordinates here; doing so can trigger yt's
+    # ParticleContainer indexing errors for TNG cutout rays.
+    rg.attrs["full_ray_copy_group"] = "../original_trident_ray"
+
+    # ---- spectra: raw + lsf
+    sg = g.create_group("spectrum")
+    _write_spectrum_products_group(sg, spec_products)
 
 
 def save_bundle_hdf5(path, meta, ray, spec_products, cols, dump_all_ray_fields: bool = False, ray_h5_path: Optional[str] = None):
@@ -688,6 +689,8 @@ def process_run_for_sid(ds, sid, snap, run_label, paths: JobPaths, cfg: SpectraC
     job_root = os.path.join(paths.output_base, f"rays_and_spectra_sid{sid}_snap{snap}_{run_label}")
     spectra_dir  = os.path.join(job_root, "spectra_h5")      # spectrum-only (always try)
     rays_dir     = os.path.join(job_root, "rays")            # optional bundles
+    original_rays_dir = os.path.join(job_root, "original_rays")
+    ray_solutions_dir = os.path.join(job_root, "ray_solutions")
     logs_dir     = os.path.join(job_root, "logs")
     combined_dir = os.path.join(job_root, "combined")
     combined_h5  = os.path.join(combined_dir, f"all_rays_{run_label}.h5")
@@ -695,6 +698,8 @@ def process_run_for_sid(ds, sid, snap, run_label, paths: JobPaths, cfg: SpectraC
     ensure_dir(job_root)
     ensure_dir(spectra_dir)
     ensure_dir(rays_dir)
+    ensure_dir(original_rays_dir)
+    ensure_dir(ray_solutions_dir)
     ensure_dir(logs_dir)
     ensure_dir(combined_dir)
 
@@ -725,13 +730,13 @@ def process_run_for_sid(ds, sid, snap, run_label, paths: JobPaths, cfg: SpectraC
         instrument=str(cfg.instrument),
         lines=json.dumps(list(cfg.lines)),
         apply_lsf=bool(cfg.apply_lsf),
+        use_peculiar_velocity=True,
+        use_doppler_redshift_only=bool(cfg.use_doppler_redshift_only),
         add_noise=bool(cfg.add_noise),
         snr=float(cfg.snr),
         noise_seed=int(cfg.noise_seed),
-        use_peculiar_velocity=True,
-        use_doppler_redshift_only=True,
-        per_line_spectra_saved=True,
-        original_trident_ray_h5_embedded=True,
+        trident_version=str(getattr(trident, "__version__", "unknown")),
+        trident_file=str(getattr(trident, "__file__", "unknown")),
     )
 
     # Scratch: include pid to avoid collisions if multiple jobs run same SID.
@@ -746,9 +751,9 @@ def process_run_for_sid(ds, sid, snap, run_label, paths: JobPaths, cfg: SpectraC
     # Determine required ions from line list once per run_label
     ions_needed = ions_from_lines(cfg.lines)
 
-    # Dump all ray fields by default; the original Trident ray HDF5 is also
-    # embedded verbatim into every output HDF5 for lossless downstream use.
+    # Optional: dump all ray fields inside bundles/combined
     dump_all_ray_fields = bool(int(os.environ.get("SPECTRA_DUMP_ALL_RAY_FIELDS", "1")))
+    half_len_default, total_len_default = run_label_lengths(run_label)
 
     for j, row in df.iterrows():
         try:
@@ -763,7 +768,8 @@ def process_run_for_sid(ds, sid, snap, run_label, paths: JobPaths, cfg: SpectraC
             phi_deg = float(row.get("phi_deg", np.nan))
             inc_deg = float(row.get("obs_inc_deg", row.get("inc_deg", np.nan)))
             rvir_kpc = float(row.get("Rvir_kpc", np.nan))
-            total_len_Rvir = float(row.get("total_len_Rvir", np.nan))
+            half_len_Rvir = float(row.get("half_len_Rvir", half_len_default))
+            total_len_Rvir = float(row.get("total_len_Rvir", total_len_default))
             sightline_id = str(row.get("sightline_id", "SL"))
 
             tag = f"{run_label}_sid{sid}_{sightline_id}_{mode}_alpha{alpha_tag}"
@@ -780,6 +786,14 @@ def process_run_for_sid(ds, sid, snap, run_label, paths: JobPaths, cfg: SpectraC
 
             # Make the ray and FORCE-writing needed ion fields into ray HDF5
             ray = make_ray(ds, p0, p1, data_filename=rayfile, solution_filename=trajfile, ions_needed=ions_needed)
+
+            original_ray_path = os.path.join(original_rays_dir, f"{tag}_original_trident_ray.h5")
+            shutil.copy2(rayfile, original_ray_path)
+            ray_solution_path = os.path.join(ray_solutions_dir, f"{tag}_ray_solution.txt")
+            if os.path.isfile(trajfile):
+                shutil.copy2(trajfile, ray_solution_path)
+            else:
+                ray_solution_path = ""
 
             # Ensure metallicity exists on the ray dataset too (harmless if already present)
             rds = _ray_dataset(ray)
@@ -807,15 +821,18 @@ def process_run_for_sid(ds, sid, snap, run_label, paths: JobPaths, cfg: SpectraC
                 phi_deg=phi_deg,
                 inc_deg=inc_deg,
                 Rvir_kpc=rvir_kpc,
+                half_len_Rvir=half_len_Rvir,
                 total_len_Rvir=total_len_Rvir,
                 start_ckpch=p0.tolist(),
                 end_ckpch=p1.tolist(),
                 lines=list(cfg.lines),
                 instrument=str(cfg.instrument),
                 use_peculiar_velocity=True,
-                use_doppler_redshift_only=True,
-                original_trident_ray_h5_embedded=True,
-                dump_all_ray_fields=bool(dump_all_ray_fields),
+                use_doppler_redshift_only=bool(cfg.use_doppler_redshift_only),
+                trident_version=str(getattr(trident, "__version__", "unknown")),
+                trident_file=str(getattr(trident, "__file__", "unknown")),
+                original_trident_ray_h5=original_ray_path,
+                trident_ray_solution_txt=ray_solution_path,
             )
 
             # 1) ALWAYS write spectrum-only first
@@ -864,11 +881,17 @@ def process_run_for_sid(ds, sid, snap, run_label, paths: JobPaths, cfg: SpectraC
                 phi_deg=phi_deg,
                 inc_deg=inc_deg,
                 Rvir_kpc=rvir_kpc,
+                half_len_Rvir=half_len_Rvir,
                 total_len_Rvir=total_len_Rvir,
                 spectrum_h5=spec_path,
+                original_trident_ray_h5=original_ray_path,
+                trident_ray_solution_txt=ray_solution_path,
                 bundle_h5=bundle_path,
                 combined_h5=combined_h5,
                 group_path=grp_path,
+                use_peculiar_velocity=True,
+                use_doppler_redshift_only=bool(cfg.use_doppler_redshift_only),
+                trident_file=str(getattr(trident, "__file__", "unknown")),
                 N_HI_cm2=cols.get("N_HI_cm2"),
                 N_CII_cm2=cols.get("N_CII_cm2"),
                 N_SiIII_cm2=cols.get("N_SiIII_cm2"),
@@ -908,10 +931,20 @@ def run_all_runs_for_sid(paths: JobPaths, params: JobParams, cfg: SpectraConfig)
             zoom_half_A=cfg.zoom_half_A,
             make_plots=cfg.make_plots,
             apply_lsf=cfg.apply_lsf,
+            use_peculiar_velocity=True,
+            use_doppler_redshift_only=cfg.use_doppler_redshift_only,
             add_noise=cfg.add_noise,
             snr=cfg.snr,
             noise_seed=cfg.noise_seed,
+            trident_version=str(getattr(trident, "__version__", "unknown")),
+            trident_file=str(getattr(trident, "__file__", "unknown")),
         ))
+        try:
+            sig = inspect.signature(trident.SpectrumGenerator.make_spectrum)
+            print("[TRIDENT] SpectrumGenerator.make_spectrum supports use_doppler_redshift_only:",
+                  "use_doppler_redshift_only" in sig.parameters)
+        except Exception as exc:
+            print("[TRIDENT] Could not inspect make_spectrum signature:", repr(exc))
 
     ds = yt.load(paths.cutout_h5)
     ensure_metallicity_field(ds)
@@ -941,7 +974,7 @@ def _parse_args(argv=None):
 
     p.add_argument("--sid", type=int, required=True)
     p.add_argument("--snap", type=int, default=99)
-    p.add_argument("--run_labels", default="L3Rvir,L4Rvir")
+    p.add_argument("--run_labels", default="L2Rvir,L3Rvir,L4Rvir")
     p.add_argument("--filter_mode", choices=["noflip", "flip"], default=None)
 
     p.add_argument("--alpha_keep", default="", help="Comma-separated alpha list, e.g. '0,90'")
@@ -956,6 +989,8 @@ def _parse_args(argv=None):
 
     # New realism toggles
     p.add_argument("--no-lsf", action="store_true", help="Disable sg.apply_lsf() (default is enabled).")
+    p.add_argument("--no-doppler-only", action="store_true",
+                   help="Disable Doppler-only redshifting and use Trident's default effective redshift.")
     p.add_argument("--add-noise", action="store_true", help="Add Gaussian noise in transmission space (default off).")
     p.add_argument("--snr", type=float, default=0.0, help="Continuum SNR if --add-noise is set.")
     p.add_argument("--noise-seed", type=int, default=0, help="0=random, else deterministic seed.")
@@ -998,6 +1033,7 @@ def _main_cli(argv=None):
         make_plots=bool(a.make_plots),
 
         apply_lsf=(not a.no_lsf),
+        use_doppler_redshift_only=(not a.no_doppler_only),
         add_noise=bool(a.add_noise),
         snr=float(a.snr),
         noise_seed=int(a.noise_seed),
