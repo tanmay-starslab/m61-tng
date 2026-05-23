@@ -375,10 +375,9 @@ def _single_spectrum_product(ray, lines, cfg: SpectraConfig) -> Dict[str, Mappin
         "lsf": {"lambda_A":..., "flux":..., "tau":...},
       }
 
-    raw flux is exp(-tau) when tau exists, else fallback to current sg.flux_field.
-    lsf flux is sg.flux_field after apply_lsf() if enabled, else equal to raw/sg output.
-    Optional noise can be applied to raw and/or lsf consistently.
-    """
+
+def _single_spectrum_product(ray, lines, cfg: SpectraConfig) -> Dict[str, Any]:
+    line_list = [lines] if isinstance(lines, str) else list(lines)
     sg = trident.SpectrumGenerator(cfg.instrument)
     sg.make_spectrum(ray, lines=lines, **_trident_make_spectrum_kwargs(cfg))
 
@@ -387,14 +386,12 @@ def _single_spectrum_product(ray, lines, cfg: SpectraConfig) -> Dict[str, Mappin
 
     # Define raw as exp(-tau) if possible.
     if tau0 is not None:
-        flux_raw = np.exp(-tau0)
+        flux_raw = np.exp(tau0 * -1.0)
         lam_raw = lam0
-        tau_raw = tau0
     else:
         # fallback: if tau missing, we at least return sg flux as "raw"
         flux_raw = flux0
         lam_raw = lam0
-        tau_raw = None
 
     # Apply LSF explicitly (your old code did this)
     if cfg.apply_lsf:
@@ -405,8 +402,6 @@ def _single_spectrum_product(ray, lines, cfg: SpectraConfig) -> Dict[str, Mappin
             pass
 
     lam_lsf, flux_lsf, tau_lsf = _get_sg_arrays(sg)
-
-    # Tau should be same grid product; prefer tau0 if present.
     tau_use = tau0 if tau0 is not None else (tau_lsf if tau_lsf is not None else None)
 
     # Optional noise (OFF by default)
@@ -571,8 +566,9 @@ def _copy_h5_root_into_group(src_path: str, dest_group) -> None:
 def save_spectrum_only_h5(path, meta: dict, spec_products: dict) -> None:
     """
     Minimal, robust output:
-      - raw: lambda + flux + tau (if present)
-      - lsf: lambda + flux + tau (if present)
+      - combined raw/lsf: lambda + flux + tau (if present)
+      - per-line raw/lsf: lambda + flux + tau (if present)
+      - original Trident ray HDF5 embedded verbatim under original_trident_ray_h5
     Written FIRST, before any bundle/combined work.
     """
     def _w(f):
@@ -588,7 +584,7 @@ def save_spectrum_only_h5(path, meta: dict, spec_products: dict) -> None:
     atomic_write_h5(path, _w)
 
 
-def _write_bundle_into_group(g, meta, ray, spec_products, cols, dump_all_ray_fields: bool = False):
+def _write_bundle_into_group(g, meta, ray, spec_products, cols, dump_all_ray_fields: bool = False, ray_h5_path: Optional[str] = None):
     mg = g.create_group("meta")
     _write_attrs(mg, meta)
 
@@ -603,9 +599,7 @@ def _write_bundle_into_group(g, meta, ray, spec_products, cols, dump_all_ray_fie
     original_ray_path = str(meta.get("original_trident_ray_h5", ""))
     _copy_h5_root_into_group(original_ray_path, g.create_group("original_trident_ray"))
 
-    # ---- ray (minimal, safe)
-    pref = ("index", "ray", "all", "gas", "grid")
-    rg = g.create_group("ray")
+    _write_original_trident_ray(g, ray_h5_path)
 
     # dl optional
     try:
@@ -625,10 +619,10 @@ def _write_bundle_into_group(g, meta, ray, spec_products, cols, dump_all_ray_fie
     _write_spectrum_products_group(sg, spec_products)
 
 
-def save_bundle_hdf5(path, meta, ray, spec_products, cols, dump_all_ray_fields: bool = False):
+def save_bundle_hdf5(path, meta, ray, spec_products, cols, dump_all_ray_fields: bool = False, ray_h5_path: Optional[str] = None):
     def _w(f):
         base = f.create_group("bundle")
-        _write_bundle_into_group(base, meta, ray, spec_products, cols, dump_all_ray_fields=dump_all_ray_fields)
+        _write_bundle_into_group(base, meta, ray, spec_products, cols, dump_all_ray_fields=dump_all_ray_fields, ray_h5_path=ray_h5_path)
     atomic_write_h5(path, _w)
 
 
@@ -642,6 +636,7 @@ def append_to_combined(
     globals_once,
     max_retries=3,
     dump_all_ray_fields: bool = False,
+    ray_h5_path: Optional[str] = None,
 ):
     for attempt in range(1, max_retries + 1):
         try:
@@ -667,7 +662,7 @@ def append_to_combined(
                 if group_path in f:
                     del f[group_path]
                 base = f.create_group(group_path)
-                _write_bundle_into_group(base, meta, ray, spec_products, cols, dump_all_ray_fields=dump_all_ray_fields)
+                _write_bundle_into_group(base, meta, ray, spec_products, cols, dump_all_ray_fields=dump_all_ray_fields, ray_h5_path=ray_h5_path)
             return
         except OSError as e:
             time.sleep(0.5)
@@ -842,7 +837,7 @@ def process_run_for_sid(ds, sid, snap, run_label, paths: JobPaths, cfg: SpectraC
 
             # 1) ALWAYS write spectrum-only first
             spec_path = os.path.join(spectra_dir, f"{tag}_spectrum.h5")
-            save_spectrum_only_h5(spec_path, meta, spec_products)
+            save_spectrum_only_h5(spec_path, meta, spec_products, ray_h5_path=rayfile)
 
             # 2) Best-effort bundle + combined (must not break the run)
             out_dir = os.path.join(rays_dir, f"sightline={sightline_id}", f"mode={mode}", f"alpha={alpha_tag}")
@@ -850,7 +845,7 @@ def process_run_for_sid(ds, sid, snap, run_label, paths: JobPaths, cfg: SpectraC
 
             bundle_path = os.path.join(out_dir, f"{tag}_bundle.h5")
             try:
-                save_bundle_hdf5(bundle_path, meta, ray, spec_products, cols, dump_all_ray_fields=dump_all_ray_fields)
+                save_bundle_hdf5(bundle_path, meta, ray, spec_products, cols, dump_all_ray_fields=dump_all_ray_fields, ray_h5_path=rayfile)
             except Exception as e:
                 with open(os.path.join(logs_dir, "errors.txt"), "a") as f:
                     f.write(f"[BUNDLE_FAIL] {tag}: {type(e).__name__}: {e}\n")
@@ -868,6 +863,7 @@ def process_run_for_sid(ds, sid, snap, run_label, paths: JobPaths, cfg: SpectraC
                     cols,
                     globals_once,
                     dump_all_ray_fields=dump_all_ray_fields,
+                    ray_h5_path=rayfile,
                 )
             except Exception as e:
                 with open(os.path.join(logs_dir, "errors.txt"), "a") as f:
