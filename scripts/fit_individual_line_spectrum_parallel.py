@@ -57,6 +57,7 @@ from fit_individual_line_pipeline_common import (  # noqa: E402
     LINE_MAP,
     RESULT_FIELDNAMES,
     STATUS_FIELDNAMES,
+    discover_spectrum_files,
     parse_spectrum_filename,
     select_task_row,
     stable_seed,
@@ -469,6 +470,29 @@ def fit_from_task(args: argparse.Namespace) -> int:
     return 0
 
 
+def fit_sid_index(args: argparse.Namespace) -> int:
+    files = discover_spectrum_files(
+        base_dir=args.base_dir,
+        sid=int(args.sid),
+        snap=int(args.snap),
+        run_label=str(args.run_label),
+        mode=args.mode,
+        alpha=args.alpha,
+        max_files=None,
+    )
+    index = int(args.spectrum_index)
+    if index < 1:
+        raise ValueError("--spectrum-index is 1-based and must be >= 1")
+    if index > len(files):
+        print(
+            f"[SKIP] sid{args.sid} spectrum index {index} exceeds discovered spectra count {len(files)}"
+        )
+        return 0
+    print(f"[DISCOVER] sid{args.sid}: {len(files)} spectra; fitting index {index}")
+    fit_one_spectrum(args, files[index - 1])
+    return 0
+
+
 def fit_files(args: argparse.Namespace) -> int:
     files = [item.strip() for item in str(args.spectrum_files).split(",") if item.strip()]
     if not files:
@@ -521,6 +545,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_task.add_argument("--task-list", default=DEFAULT_TASK_LIST)
     p_task.add_argument("--task-index", type=int, required=True)
 
+    p_sid = sub.add_parser("fit-sid-index", help="Discover one SID's spectra and fit a 1-based spectrum index.")
+    add_common(p_sid)
+    p_sid.add_argument("--spectrum-index", type=int, required=True)
+    p_sid.add_argument("--mode", choices=["all", "flip", "noflip"], default="all")
+    p_sid.add_argument("--alpha", default="all")
+
     p_files = sub.add_parser("fit-files", help="Fit comma-separated spectrum HDF5 files.")
     add_common(p_files)
     p_files.add_argument("--spectrum-files", required=True)
@@ -535,6 +565,8 @@ def main() -> int:
     args = build_parser().parse_args()
     if args.command == "fit-task":
         return fit_from_task(args)
+    if args.command == "fit-sid-index":
+        return fit_sid_index(args)
     if args.command == "fit-files":
         return fit_files(args)
     if args.command == "plot-h5":
