@@ -5,7 +5,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=30G
-#SBATCH --time=1-22:00:00
+#SBATCH --time=2-08:00:00
 #SBATCH --output=/scratch/tsingh65/m61-tng/logs/spec_arr_%A_%a.out
 #SBATCH --error=/scratch/tsingh65/m61-tng/logs/spec_arr_%A_%a.err
 #SBATCH --array=1-1   # <-- OVERRIDE AT SUBMIT TIME (see bottom)
@@ -39,7 +39,7 @@ EXCLUDE_SID=""
 # Where to store logs + generated SID list
 GLOBAL_LOGDIR="/scratch/tsingh65/m61-tng/logs"
 SID_LIST="${REPO}/data/sids_from_cutouts_snap${SNAP}.txt"
-REBUILD_SID_LIST=1
+REBUILD_SID_LIST=0
 
 # Skip work if already processed (default 0 = rerun all SIDs)
 SKIP_IF_DONE=0
