@@ -10,7 +10,7 @@
 #SBATCH --error=/scratch/tsingh65/m61-tng/outputs/disk_ism_velocity/logs/stageB_%A_%a.err
 #SBATCH --array=1-20%20
 # Stage B: per-sightline v_ISM for all 720 orientations of one SID. SID list = all_sids.txt.
-set -euo pipefail
+set -eo pipefail   # NB: no -u; conda's (de)activate scripts reference unbound vars
 module purge; module load mamba
 eval "$(conda shell.bash hook)"; export CONDA_NO_PLUGINS=true
 conda activate trident

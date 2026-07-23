@@ -11,7 +11,7 @@
 #SBATCH --error=/scratch/tsingh65/m61-tng/outputs/disk_ism_velocity/logs/stageA_%A_%a.err
 #SBATCH --array=1-15%6
 # Stage A: per-SID multi-tracer rotation curves (build_sid_rc.py). SID list = stage_a_sids.txt.
-set -euo pipefail
+set -eo pipefail   # NB: no -u; conda's (de)activate scripts reference unbound vars
 module purge; module load mamba
 eval "$(conda shell.bash hook)"; export CONDA_NO_PLUGINS=true
 conda activate trident
