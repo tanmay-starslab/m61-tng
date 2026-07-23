@@ -16,9 +16,9 @@ def main():
     df.to_csv(p, index=False)
     nsid = df["sid"].nunique() if "sid" in df else 0
     nprim = int(df["v_ism_primary"].notna().sum()) if "v_ism_primary" in df else 0
-    ndirect = int((df.get("v_mode") == "direct").sum()) if "v_mode" in df else 0
+    ndirect = int((df["v_mode"] == "direct_cool").sum()) if "v_mode" in df else 0
     print(f"master: {len(df)} rows from {nsid} SIDs -> {p}")
-    print(f"  {nprim} with v_ISM ; {ndirect} direct / {nprim - ndirect} R95-edge")
+    print(f"  {nprim} with v_ISM ; {ndirect} direct_cool / {nprim - ndirect} R95-edge")
 
 
 if __name__ == "__main__":
