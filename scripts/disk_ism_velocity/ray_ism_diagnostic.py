@@ -23,8 +23,10 @@ import matplotlib.pyplot as plt
 os.environ.setdefault("HDF5_USE_FILE_LOCKING", "FALSE")
 sys.path.insert(0, "/scratch/tsingh65/m61-tng/scripts")
 import h5py  # noqa: E402
-from pm_general import (C_KMS, CM_PER_KPC, get_geometry, get_original_rho,  # noqa: E402
+from pm_general import (C_KMS, CM_PER_KPC, TNG_H, get_geometry, get_original_rho,  # noqa: E402
                         compute_endpoints)
+
+BOX_KPC = 35000.0 / TNG_H   # TNG50 box (35 Mpc/h) in physical kpc -> periodic wrapping
 
 RC_DIR = Path("/scratch/tsingh65/m61-tng/outputs/disk_ism_velocity/rotation_curves")
 OUT = Path("/scratch/tsingh65/m61-tng/outputs/disk_ism_velocity/ray_diagnostics")
@@ -108,9 +110,10 @@ def diagnose(sid, mode, alpha):
 
     v_rest = -vlos - v_sys
     rel = xyz - center
+    rel = rel - BOX_KPC * np.round(rel / BOX_KPC)   # periodic wrap (galaxies near box edge)
     x_d = rel @ e1; y_d = rel @ e2; z_d = rel @ nd
     R_disk = np.hypot(x_d, y_d)
-    s = (xyz - anchor) @ los
+    s = (rel - (anchor - center)) @ los
 
     disk = (np.abs(z_d) < Z0) & (R_disk < R_edge)
 
@@ -125,6 +128,16 @@ def diagnose(sid, mode, alpha):
     R_cross = float(R_disk[np.abs(z_d).argmin()])
     in_disk = bool(R_cross < R_edge)
 
+    # R95-boundary velocity: fiducial rotation curve clamped to the disk edge (R95),
+    # projected onto the LOS. Used as the ISM reference when the sightline crosses
+    # BEYOND the disk (R_cross >= R_edge), where there is no disk gas to weight.
+    Rc_a = rc["R_center"]; vf_a = rc["v_fid_median"]; fin2 = np.isfinite(vf_a)
+    v_edge = (float(np.interp(R_edge, Rc_a[fin2], vf_a[fin2])) * M["proj"]
+              if (fin2.sum() >= 2 and np.isfinite(M["proj"])) else np.nan)
+    has_cool = bool(np.isfinite(v_si) and f_disk_si > 0.05)
+    v_primary = v_dens if (in_disk and has_cool) else v_edge
+    v_mode = "direct" if (in_disk and has_cool) else "R95-edge"
+
     v_dip = np.nan
     if "Si_II_1260" in specs:
         lam, flux, rest, _, _ = specs["Si_II_1260"]
@@ -134,8 +147,8 @@ def diagnose(sid, mode, alpha):
 
     print(f"\n=== SID {sid} {mode} a{alpha} ===")
     print(f"  R_edge(R95)={R_edge:.1f}  R_cross={R_cross:.1f}  in_disk={in_disk}  rho={rho:.1f}  v_sys={v_sys:.1f}")
-    print(f"  v_ISM_model={v_ism_model:.1f} | DIRECT density={v_dens:.1f}  SiII={v_si:.1f}  HI={v_hi:.1f}  (SiII dip={v_dip:.1f})")
-    print(f"  --> direct(density)-dip = {v_dens - v_dip:+.1f} km/s ; f_disk(SiII)={f_disk_si:.2f}")
+    print(f"  v_ISM_model={v_ism_model:.1f} | DIRECT density={v_dens:.1f} SiII={v_si:.1f} HI={v_hi:.1f} | R95-edge={v_edge:.1f}  (SiII dip={v_dip:.1f})")
+    print(f"  --> PRIMARY v_ISM={v_primary:.1f} [{v_mode}] ; primary-dip={v_primary - v_dip:+.1f} km/s ; f_disk(SiII)={f_disk_si:.2f}")
 
     fig, ax = plt.subplots(2, 2, figsize=(16, 9))
     fig.suptitle(f"SID {sid} · {mode} · α={alpha}° · rho={rho:.1f} · R_cross={R_cross:.1f} · "
@@ -152,7 +165,9 @@ def diagnose(sid, mode, alpha):
     if np.isfinite(v_dens):
         a.axvline(v_dens, color="#06a77d", lw=2.6, label=f"v_ISM direct(ρ)={v_dens:.0f}")
     if np.isfinite(v_ism_model):
-        a.axvline(v_ism_model, color="#0077b6", lw=1.8, ls="--", label=f"v_ISM model={v_ism_model:.0f}")
+        a.axvline(v_ism_model, color="#0077b6", lw=1.5, ls="--", label=f"v_ISM model={v_ism_model:.0f}")
+    if np.isfinite(v_edge):
+        a.axvline(v_edge, color="#ff8c00", lw=2.2, ls="-.", label=f"v_ISM R95-edge={v_edge:.0f}")
     a.set_xlim(-700, 700); a.set_ylim(-0.05, 1.15)
     a.set_xlabel(r"$v_{\rm rest}$ [km s$^{-1}$] (+=recession)"); a.set_ylabel("flux")
     a.set_title("Multi-ion absorption"); a.legend(fontsize=8, ncol=2, loc="lower left")
@@ -188,7 +203,9 @@ def diagnose(sid, mode, alpha):
     if np.isfinite(v_dens):
         a.axvline(v_dens, color="#06a77d", lw=2.6, label=f"direct={v_dens:.0f}")
     if np.isfinite(v_ism_model):
-        a.axvline(v_ism_model, color="#0077b6", lw=1.8, ls="--", label=f"model={v_ism_model:.0f}")
+        a.axvline(v_ism_model, color="#0077b6", lw=1.5, ls="--", label=f"model={v_ism_model:.0f}")
+    if np.isfinite(v_edge):
+        a.axvline(v_edge, color="#ff8c00", lw=2.2, ls="-.", label=f"R95-edge={v_edge:.0f}")
     a.set_xlim(-700, 700); a.set_xlabel(r"$v_{\rm rest}$"); a.set_ylabel("column-wt (norm.)")
     a.set_title("Ion column-weighted velocity"); a.legend(fontsize=8, ncol=2)
 
@@ -208,7 +225,8 @@ def diagnose(sid, mode, alpha):
     print(f"  saved {p}")
     return dict(sid=sid, mode=mode, alpha=alpha, rho=rho, R_edge=R_edge, R_cross=R_cross,
                 in_disk=in_disk, v_sys=v_sys, v_ism_model=v_ism_model, v_dens=v_dens,
-                v_si=v_si, v_hi=v_hi, v_dip=v_dip, f_disk_si=f_disk_si)
+                v_si=v_si, v_hi=v_hi, v_edge=v_edge, v_primary=v_primary, v_mode=v_mode,
+                v_dip=v_dip, f_disk_si=f_disk_si)
 
 
 def main():

@@ -52,6 +52,28 @@ outer disk, so the strongest absorber there is a CGM cloud — correctly separat
 
 Galaxies tested so far (Stage A done): 342448, 482889, 452978, 438148, 413372.
 
+## R95-boundary fallback (for sightlines that cross beyond the disk)
+When R_cross >= R_edge there is no disk gas to weight, so v_ISM falls back to the
+**rotation curve at R95, projected onto the LOS** (`v_fid(R_edge) * proj`). Tested on
+beyond-disk sightlines across 438148 / 413372 / 452978 / 482889:
+- It gives a value for EVERY sightline (no more nan).
+- Whether it **overlaps the strong Si II component is orientation-dependent**: it does in
+  ~2/10 cases (e.g. 438148 flip200: edge -58 vs dip -60; 413372 flip45: 124 vs 107) where
+  co-rotating cool gas persists just past R95; it does NOT in the rest (e.g. 438148 flip45:
+  edge -109 vs dip +108), where the strong absorber is a distinct CGM/HVC cloud.
+- **Interpretation:** overlap => outer-disk extension; no overlap => genuine HVC/CGM. So the
+  R95-edge value is a useful disk-reference AND the overlap test is itself a HVC discriminator.
+- Caveat: v_fid is the median rotation curve, which we found runs ~15-30 km/s slow vs the
+  actual in-disk gas; the R95-edge value carries that model character (a per-galaxy
+  direct-minus-model correction could be applied later).
+
+## Bug fixed
+Periodic-boundary wrapping added: galaxies near a box edge (438148, 413372, 452978, 482889)
+had far ray cells displaced by ~1 box length (35 Mpc/h). The disk-plane physics (|z|<2) was
+unaffected (values unchanged after the fix), but the plot axes and far-cell positions are now
+correct: `rel -= BOX_KPC * round(rel/BOX_KPC)`.
+
 ## Next
 - Weight by cool-gas density (T<1e4) or require a minimum disk cool-gas column; flag no-ISM sightlines.
-- Stage A for the remaining 15 SIDs (sbatch), then Stage B (direct v_ISM) over all 14,400 sightlines.
+- Optional per-galaxy direct-minus-model correction for the R95-edge velocity.
+- Stage A for the remaining 15 SIDs (sbatch), then Stage B (direct + R95-edge v_ISM) over all 14,400 sightlines.
