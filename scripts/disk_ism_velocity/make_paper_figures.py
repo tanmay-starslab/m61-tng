@@ -79,23 +79,21 @@ def fig1_abundance(comp, cells):
     xc = 0.5 * (bins[:-1] + bins[1:])
     # (a) discrete absorber counts per sightline
     a = ax[0]
-    for c in ("ISM", "IVC", "HVC"):
-        a.axvspan(*_span(c), color=S.CLASS[c], alpha=0.07, lw=0)
+    S.shade_classes(a)
     h, _ = np.histogram(comp["dv"], bins=bins)
     a.step(xc, h / n_sl, where="mid", color="#1B3A5B", lw=2.0, zorder=4)
     a.fill_between(xc, h / n_sl, step="mid", color="#1B3A5B", alpha=0.12)
     a.axvline(0, color="0.35", ls=":", lw=1.3)
-    for c in ("ISM", "IVC", "HVC"):
-        a.axvline(_span(c)[1] if c != "HVC" else 1e9, color=S.CLASS[c], ls="--", lw=0.9, alpha=0.5)
+    for xb in (IVC, HVC):
+        for s in (1, -1):
+            a.axvline(s * xb, color="0.5", ls="--", lw=0.7, alpha=0.6)
     a.set_xlim(-500, 500)
     a.set_xlabel(r"$v_{\mathrm{los}} - v_{\mathrm{ISM}}\ \ [\mathrm{km\,s^{-1}}]$")
-    a.set_ylabel(r"absorbers per sightline  $dN/d(\Delta v)$")
+    a.set_ylabel(r"absorbers per sightline per bin")
     S.grid(a); S.panel_label(a, "(a)")
-    S.tag(a, r"Si\,II\ components", "ur")
     # (b) Si II column-weighted abundance (all absorbing gas)
     b = ax[1]
-    for c in ("ISM", "IVC", "HVC"):
-        b.axvspan(*_span(c), color=S.CLASS[c], alpha=0.07, lw=0)
+    S.shade_classes(b)
     hw, _ = np.histogram(cells["dv"], bins=bins, weights=cells["NSiII"])
     b.step(xc, hw / n_sl, where="mid", color=S.ACCENT, lw=2.0, zorder=4)
     b.fill_between(xc, hw / n_sl, step="mid", color=S.ACCENT, alpha=0.12)
@@ -104,9 +102,10 @@ def fig1_abundance(comp, cells):
     b.set_xlabel(r"$v_{\mathrm{los}} - v_{\mathrm{ISM}}\ \ [\mathrm{km\,s^{-1}}]$")
     b.set_ylabel(r"$\Sigma\,N_{\mathrm{Si\,II}}$ per sightline  $[\mathrm{cm^{-2}}\,/\,\mathrm{bin}]$")
     S.grid(b); S.panel_label(b, "(b)")
-    # class labels
+    # class labels (x in data coords, y in axes fraction)
+    tr = ax[0].get_xaxis_transform()
     for c, x in (("ISM", 0), ("IVC", 70), ("HVC", 300)):
-        ax[0].text(x, ax[0].get_ylim()[1] * 0.93, c, color=S.CLASS[c], ha="center",
+        ax[0].text(x, 0.96, c, transform=tr, color=S.CLASS[c], ha="center",
                    va="top", fontsize=plt.rcParams["legend.fontsize"], fontweight="bold")
     fig.text(0.5, 0.995, r"Absorber abundance vs.\ velocity offset from the disk ISM"
              if plt.rcParams["text.usetex"] else "Absorber abundance vs. velocity offset from the disk ISM",
@@ -135,7 +134,7 @@ def fig2_hvc_ge100(comp):
     ax.set_ylabel(r"HVC absorbers per sightline  $dN/d|\Delta v|$")
     ax.legend(loc="upper right")
     S.grid(ax)
-    S.tag(ax, (r"$N_{\rm HVC}=%d$" % len(hv)) + "\n" + (r"$f_{\rm HVC}=%.2f$/sl" % (len(hv) / n_sl)), "ur")
+    S.tag(ax, (r"$N_{\rm HVC}=%d$" % len(hv)) + "\n" + (r"$f_{\rm HVC}=%.2f$/sl" % (len(hv) / n_sl)), "ll")
     fig.tight_layout()
     return S.save(fig, "fig2_hvc_abundance_ge100")
 
@@ -200,12 +199,14 @@ def fig5_phase_space(comp):
     hv = comp[comp["dv"].abs() >= HVC].copy()
     fig, ax = plt.subplots(1, 2, figsize=(13.0, 5.4))
     a = ax[0]
-    sc = a.scatter(hv["R_disk"], hv["z_disk"], c=hv["v_r"], cmap=S.DIVCMAP,
-                   norm=S.diverging_norm(200), s=10, alpha=0.7, edgecolors="none")
-    a.axhline(0, color="0.4", ls=":", lw=1.0)
+    inner = hv[hv["R_disk"] < 120]
+    hb0 = a.hexbin(inner["R_disk"], inner["z_disk"], C=inner["v_r"], reduce_C_function=np.mean,
+                   gridsize=38, cmap=S.DIVCMAP, vmin=-200, vmax=200, mincnt=1)
+    a.axhline(0, color="0.35", ls=":", lw=1.0)
     a.set_xlabel(r"$R_{\mathrm{disk}}\ [\mathrm{kpc}]$"); a.set_ylabel(r"$z_{\mathrm{disk}}\ [\mathrm{kpc}]$")
-    cb = fig.colorbar(sc, ax=a, fraction=0.05, pad=0.02); cb.set_label(r"$v_r\ [\mathrm{km\,s^{-1}}]$")
-    S.grid(a); S.panel_label(a, "(a)")
+    cb = fig.colorbar(hb0, ax=a, fraction=0.05, pad=0.02)
+    cb.set_label(r"$\langle v_r\rangle\ [\mathrm{km\,s^{-1}}]$")
+    S.panel_label(a, "(a)")
     b = ax[1]
     hb = b.hexbin(hv["r_gal"], hv["v_r"], gridsize=32, cmap=S.DENSCMAP, bins="log", mincnt=1)
     b.axhline(0, color="w", ls=":", lw=1.0)
@@ -269,14 +270,6 @@ def fig7_column_temp(comp):
                  else "Absorber column and temperature vs. velocity offset", fontsize=plt.rcParams["axes.labelsize"])
     fig.tight_layout(rect=[0, 0, 1, 0.96])
     return S.save(fig, "fig7_column_temperature_vs_dv")
-
-
-def _span(c):
-    if c == "ISM":
-        return (-IVC, IVC)
-    if c == "IVC":
-        return (-HVC, -IVC)  # (only used for shading extent; symmetric handled below)
-    return (-560, -HVC)
 
 
 def main():

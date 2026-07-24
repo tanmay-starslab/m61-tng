@@ -78,6 +78,14 @@ def grid(ax, which="major"):
     ax.grid(which=which, ls="-", lw=0.5, alpha=0.16, zorder=0)
 
 
+def shade_classes(ax, xmax=560.0, alpha=0.06):
+    """Shade the ISM/IVC/HVC |dv| regions symmetrically on a signed-dv axis."""
+    ax.axvspan(-CLASS_BINS[0], CLASS_BINS[0], color=CLASS["ISM"], alpha=alpha, lw=0, zorder=0)
+    for s in (1, -1):
+        ax.axvspan(s * CLASS_BINS[0], s * CLASS_BINS[1], color=CLASS["IVC"], alpha=alpha, lw=0, zorder=0)
+        ax.axvspan(s * CLASS_BINS[1], s * xmax, color=CLASS["HVC"], alpha=alpha, lw=0, zorder=0)
+
+
 def tag(ax, text, corner="ul", fs=None, alpha=0.92):
     """Rounded corner tag box (OVI place_tag)."""
     xy = {"ul": (0.035, 0.965, "left", "top"), "ur": (0.965, 0.965, "right", "top"),
