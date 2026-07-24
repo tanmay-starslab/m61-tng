@@ -28,7 +28,8 @@ CATDIR = Path("/scratch/tsingh65/m61-tng/outputs/disk_ism_velocity/absorber_cata
 MASTER = Path("/scratch/tsingh65/m61-tng/outputs/disk_ism_velocity/vism_tables/vism_master_all_sightlines.csv")
 HVC = 100.0
 IVC = 40.0
-FLOOR = {"HI": 1e13, "CII": 1e12, "SiII": 1e12, "SiIII": 1e12, "SiIV": 1e12, "NV": 3e12}
+FLOOR = {"HI": 1e13, "CII": 1e12, "SiII": 1e12, "SiIII": 1e12, "SiIV": 1e12, "NV": 3e12,
+         "CIV": 1e12, "OI": 1e12, "OVI": 3e12, "MgII": 1e11, "FeII": 1e11}
 
 
 def load():
@@ -235,7 +236,7 @@ def fig6_budget(cells):
 def fig7_ionratio(cells):
     fig, ax = plt.subplots(1, 2, figsize=(13.4, 5.4))
     for a, (num, den, lab) in zip(ax, [("SiIV", "SiII", r"$\log_{10}\,N_{\mathrm{Si\,IV}}/N_{\mathrm{Si\,II}}$"),
-                                       ("NV", "SiII", r"$\log_{10}\,N_{\mathrm{N\,V}}/N_{\mathrm{Si\,II}}$")]):
+                                       ("CIV", "SiII", r"$\log_{10}\,N_{\mathrm{C\,IV}}/N_{\mathrm{Si\,II}}$")]):
         ok = (cells[f"N_{num}"] > FLOOR[num]) & (cells[f"N_{den}"] > FLOOR[den])
         c = cells[ok]
         ratio = np.log10(c[f"N_{num}"] / c[f"N_{den}"])
