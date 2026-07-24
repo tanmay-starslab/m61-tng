@@ -34,6 +34,18 @@ ACCENT = "#0B7285"
 
 CLASS_BINS = [40.0, 100.0]   # |dv| thresholds: ISM | IVC | HVC
 
+# ionization sequence (neutral/cool -> warm-hot), for multi-ion / multi-phase figures.
+# color runs cool(black/blue) -> hot(red).
+IONS = [("HI",    r"$\mathrm{H\,I}$",    "#222222"),
+        ("CII",   r"$\mathrm{C\,II}$",   "#2C7FB8"),
+        ("SiII",  r"$\mathrm{Si\,II}$",  "#33A895"),
+        ("SiIII", r"$\mathrm{Si\,III}$", "#8C6BB1"),
+        ("SiIV",  r"$\mathrm{Si\,IV}$",  "#EE9A2E"),
+        ("NV",    r"$\mathrm{N\,V}$",    "#C0392B")]
+ION_KEYS = [i[0] for i in IONS]
+ION_LAB = {k: l for k, l, _ in IONS}
+ION_COL = {k: c for k, _, c in IONS}
+
 
 def classify(dv):
     """Kinematic class from dv = v_los - v_ISM (array or scalar)."""

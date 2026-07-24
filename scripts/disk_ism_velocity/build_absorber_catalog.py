@@ -1,15 +1,18 @@
 #!/usr/bin/env python3
-"""Si II absorbing-gas cell catalog for all 720 sightlines of one SID.
+"""Multi-ion absorbing-gas cell catalog for all 720 sightlines of one SID.
 
-For every ray cell carrying Si II (n_SiII > NSI_FLOOR): the corrected LOS velocity
-v_rest and its offset from the sightline disk-ISM velocity (dv = v_rest - v_ISM); the
-Si II and H I column carried by the cell; the full galaxy-frame 3D kinematics
+For every ray cell that carries a detectable column in ANY of the six gas ions available
+in the combined ray (H I, C II, N V, Si II, Si III, Si IV -- the neutral -> low -> mid ->
+high ionization sequence): the corrected LOS velocity v_rest and its offset from the
+sightline disk-ISM velocity (dv = v_rest - v_ISM); the column carried by EACH ion; the
+full galaxy-frame 3D kinematics
   v_gal = relative_velocity/1e5 - SubhaloVel        (verified: dot(v_gal, los) = v_rest)
   v_r   = v_gal . r_hat   (galactocentric radial; >0 outflow, <0 inflow)
   v_z   = v_gal . n_disk  (perpendicular to the disk plane)
-disk-frame + galactocentric position, metallicity (Z/Zsun) and temperature. This is the
-base catalog for the absorber-abundance and inflow/outflow figures; velocity-component
-clustering is done downstream from the combined catalog.
+disk-frame + galactocentric position, metallicity (Z/Zsun) and temperature.
+
+Base catalog for the multi-ion / multi-phase abundance, inflow-outflow, metallicity and
+ionization figures. Per-ion column-weighting is done downstream.
 
 Usage: python build_absorber_catalog.py <sid>
 Output: outputs/disk_ism_velocity/absorber_catalog/absorbers_sid<sid>.parquet
@@ -32,8 +35,13 @@ import build_sid_rc as B  # noqa: E402
 
 OUT = Path("/scratch/tsingh65/m61-tng/outputs/disk_ism_velocity/absorber_catalog")
 MASTER = Path("/scratch/tsingh65/m61-tng/outputs/disk_ism_velocity/vism_tables/vism_master_all_sightlines.csv")
-NSI_FLOOR = 1e-11   # cm^-3, Si II number-density floor defining 'absorbing gas'
-ZSUN = 0.0127       # solar metal mass fraction (GFM_Metallicity is a mass fraction)
+ZSUN = 0.0127
+
+# ion -> ray gas number-density field
+IONFIELD = {"HI": "H_p0_number_density", "CII": "C_p1_number_density", "NV": "N_p4_number_density",
+            "SiII": "Si_p1_number_density", "SiIII": "Si_p2_number_density", "SiIV": "Si_p3_number_density"}
+# per-ion column floor (cm^-2) for keeping a cell (union across ions)
+FLOOR = {"HI": 1e13, "CII": 1e12, "SiII": 1e12, "SiIII": 1e12, "SiIV": 1e12, "NV": 3e12}
 
 
 def main():
@@ -64,16 +72,19 @@ def main():
                 anchor = compute_endpoints(sid, mode, alpha, rho, 50.)["anchor_kpc"]
                 grp = base[f"mode={mode}"][ag]
                 grid = grp[list(grp.keys())[0]]["original_trident_ray_h5/grid"]
-                nsi = grid["Si_p1_number_density"][()]
-                sel = nsi > NSI_FLOOR
+                dl_cm = grid["dl"][()]
+                ncell = len(dl_cm)
+                Ncol = {ion: (grid[fld][()] * dl_cm if fld in grid else np.zeros(ncell))
+                        for ion, fld in IONFIELD.items()}
+                sel = np.zeros(ncell, bool)
+                for ion in IONFIELD:
+                    sel |= Ncol[ion] > FLOOR[ion]
                 if not sel.any():
                     continue
                 xyz = np.vstack([grid["x"][()], grid["y"][()], grid["z"][()]]).T / CM_PER_KPC
                 vlos = grid["velocity_los"][()] / 1e5
-                dl_cm = grid["dl"][()]
                 rv = np.vstack([grid["relative_velocity_x"][()], grid["relative_velocity_y"][()],
                                 grid["relative_velocity_z"][()]]).T / 1e5
-                nhi = grid["H_p0_number_density"][()]
                 T = grid["temperature"][()]
                 Z = grid["metallicity"][()]
                 v_rest = -vlos - v_sys
@@ -87,22 +98,22 @@ def main():
                 x_d = rel @ e1; y_d = rel @ e2; z_d = rel @ n_disk
                 R_disk = np.hypot(x_d, y_d)
                 s = (rel - (anchor - center)) @ los
-                NSiII = nsi * dl_cm; NHI = nhi * dl_cm
-                parts.append(pd.DataFrame(dict(
-                    sid=sid, mode=mode, alpha=alpha, v_ISM=v_ISM, v_mode=str(mrow.v_mode),
-                    in_disk=bool(mrow.in_disk), rho_kpc=float(rho),
-                    v_rest=v_rest[sel], dv=v_rest[sel] - v_ISM, NSiII=NSiII[sel], NHI=NHI[sel],
-                    v_r=v_r[sel], v_z=v_z[sel], R_disk=R_disk[sel], z_disk=z_d[sel], r_gal=r[sel],
-                    s=s[sel], Zsolar=Z[sel] / ZSUN, logT=np.log10(np.clip(T[sel], 1.0, None)))))
+                d = dict(sid=sid, mode=mode, alpha=alpha, v_ISM=v_ISM, v_mode=str(mrow.v_mode),
+                         in_disk=bool(mrow.in_disk), rho_kpc=float(rho),
+                         v_rest=v_rest[sel], dv=v_rest[sel] - v_ISM, v_r=v_r[sel], v_z=v_z[sel],
+                         R_disk=R_disk[sel], z_disk=z_d[sel], r_gal=r[sel], s=s[sel],
+                         Zsolar=Z[sel] / ZSUN, logT=np.log10(np.clip(T[sel], 1.0, None)))
+                for ion in IONFIELD:
+                    d[f"N_{ion}"] = Ncol[ion][sel]
+                parts.append(pd.DataFrame(d))
     if not parts:
         print(f"[SID {sid}] no absorbing cells"); return
     df = pd.concat(parts, ignore_index=True)
     p = OUT / f"absorbers_sid{sid}.parquet"
     df.to_parquet(p, index=False)
-    print(f"[SID {sid}] {len(df)} absorbing cells over {df.groupby(['mode','alpha']).ngroups} sightlines "
-          f"-> {p}")
-    print(f"  dv range [{df.dv.min():.0f},{df.dv.max():.0f}]  v_r [{df.v_r.min():.0f},{df.v_r.max():.0f}]  "
-          f"Zsolar median {df.Zsolar.median():.2f}  logNSiII [{np.log10(df.NSiII.clip(1).replace(0,1)).min():.1f},{np.log10(df.NSiII).max():.1f}]")
+    frac = {ion: int((df[f"N_{ion}"] > FLOOR[ion]).sum()) for ion in IONFIELD}
+    print(f"[SID {sid}] {len(df)} cells over {df.groupby(['mode','alpha']).ngroups} sightlines -> {p}")
+    print(f"  cells above floor per ion: {frac}")
 
 
 if __name__ == "__main__":
