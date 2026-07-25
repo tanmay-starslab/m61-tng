@@ -35,6 +35,14 @@ FLOOR = {"HI": 1e13, "CII": 1e12, "SiII": 1e12, "SiIII": 1e12, "SiIV": 1e12, "NV
 def load():
     files = sorted(glob.glob(str(CATDIR / "absorbers_sid*.parquet")))
     cells = pd.concat([pd.read_parquet(f) for f in files], ignore_index=True)
+    # Tier-0b clean science sample: drop periodic-box-wrap and hyper-velocity (>700 km/s)
+    # cells. Effect on the headline fractions is <1pp (see validation/tier0b), but the mask
+    # gives clean provenance for the published figures.
+    if "wrapped" in cells and "hypervel" in cells:
+        n0 = len(cells)
+        cells = cells[~(cells.wrapped | cells.hypervel)].reset_index(drop=True)
+        print(f"[load] clean mask: dropped {n0 - len(cells)} wrapped/hypervel cells "
+              f"({100*(n0-len(cells))/n0:.3f}%) -> {len(cells)} cells")
     m = pd.read_csv(MASTER)
     n_sl = int(m["v_ism_primary"].notna().sum())   # sightlines probed
     return cells, n_sl

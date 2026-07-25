@@ -39,6 +39,7 @@ import build_sid_rc as B  # noqa: E402
 OUT = Path("/scratch/tsingh65/m61-tng/outputs/disk_ism_velocity/absorber_catalog")
 MASTER = Path("/scratch/tsingh65/m61-tng/outputs/disk_ism_velocity/vism_tables/vism_master_all_sightlines.csv")
 ZSUN = 0.0127
+HYPERVEL_KMS = 700.0   # |v_rest| ceiling: above this a cell is a super-escape numerical extreme
 RAW = {"HI": "H_p0_number_density", "CII": "C_p1_number_density", "NV": "N_p4_number_density",
        "SiII": "Si_p1_number_density", "SiIII": "Si_p2_number_density", "SiIV": "Si_p3_number_density"}
 NEW = {"CIV": ("C IV", "C_p3_number_density"), "OI": ("O I", "O_p0_number_density"),
@@ -102,7 +103,14 @@ def main():
                 rho, _, _ = get_original_rho(sid, mode, alpha)
                 anchor = compute_endpoints(sid, mode, alpha, rho, 50.)["anchor_kpc"]
                 v_rest = -vlos - v_sys
-                rel = xyz - center; rel = rel - R.BOX_KPC * np.round(rel / R.BOX_KPC)
+                # periodic-box-wrap detection: cells whose min-image correction is nonzero on
+                # any axis are wrapped across the box (the ray endpoint pokes outside the domain).
+                wrapn = np.round((xyz - center) / R.BOX_KPC)
+                wrapped = np.any(wrapn != 0, axis=1)
+                rel = (xyz - center) - R.BOX_KPC * wrapn
+                # hyper-velocity: |v_rest| beyond any plausible halo velocity (super-escape) -> a
+                # numerical/wrap-adjacent extreme, not a physical absorber.
+                hypervel = np.abs(v_rest) > HYPERVEL_KMS
                 r = np.linalg.norm(rel, axis=1); rhat = rel / np.clip(r, 1e-6, None)[:, None]
                 vgal = rv - sub_vel
                 v_r = np.einsum("ij,ij->i", vgal, rhat); v_z = vgal @ n_disk
@@ -112,7 +120,8 @@ def main():
                          in_disk=bool(mrow.in_disk), rho_kpc=float(rho),
                          v_rest=v_rest[sel], dv=v_rest[sel] - v_ISM, v_r=v_r[sel], v_z=v_z[sel],
                          R_disk=R_disk[sel], z_disk=z_d[sel], r_gal=r[sel], s=s[sel],
-                         Zsolar=Z[sel] / ZSUN, logT=np.log10(np.clip(T[sel], 1.0, None)))
+                         Zsolar=Z[sel] / ZSUN, logT=np.log10(np.clip(T[sel], 1.0, None)),
+                         wrapped=wrapped[sel], hypervel=hypervel[sel])
                 for ion in Ncol:
                     d[f"N_{ion}"] = Ncol[ion][sel]
                 parts.append(pd.DataFrame(d))
@@ -122,7 +131,10 @@ def main():
         print(f"[SID {sid}] no absorbing cells"); return
     df = pd.concat(parts, ignore_index=True)
     pth = OUT / f"absorbers_sid{sid}.parquet"; df.to_parquet(pth, index=False)
+    nflag = int((df.wrapped | df.hypervel).sum())
     print(f"[SID {sid}] {len(df)} cells over {df.groupby(['mode','alpha']).ngroups} sightlines -> {pth}")
+    print(f"  flagged (wrapped|hypervel): {nflag} ({100*nflag/len(df):.2f}%)  "
+          f"wrapped={int(df.wrapped.sum())} hypervel={int(df.hypervel.sum())}")
     print("  cells>floor: " + ", ".join(f"{ion} {int((df[f'N_{ion}']>FLOOR[ion]).sum())}" for ion in Ncol))
 
 
