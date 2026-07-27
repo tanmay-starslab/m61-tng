@@ -241,10 +241,14 @@ def fig6_budget(cells):
 
 
 # ── fig7 ─────────────────────────────────────────────────────────────────────────
+# (num, den, ylabel) pairs for the ionization-ratio panels; overridable (v2 uses in-band only).
+RATIO_PAIRS = [("SiIV", "SiII", r"$\log_{10}\,N_{\mathrm{Si\,IV}}/N_{\mathrm{Si\,II}}$"),
+               ("CIV", "SiII", r"$\log_{10}\,N_{\mathrm{C\,IV}}/N_{\mathrm{Si\,II}}$")]
+
+
 def fig7_ionratio(cells):
     fig, ax = plt.subplots(1, 2, figsize=(13.4, 5.4))
-    for a, (num, den, lab) in zip(ax, [("SiIV", "SiII", r"$\log_{10}\,N_{\mathrm{Si\,IV}}/N_{\mathrm{Si\,II}}$"),
-                                       ("CIV", "SiII", r"$\log_{10}\,N_{\mathrm{C\,IV}}/N_{\mathrm{Si\,II}}$")]):
+    for a, (num, den, lab) in zip(ax, RATIO_PAIRS):
         ok = (cells[f"N_{num}"] > FLOOR[num]) & (cells[f"N_{den}"] > FLOOR[den])
         c = cells[ok]
         ratio = np.log10(c[f"N_{num}"] / c[f"N_{den}"])
