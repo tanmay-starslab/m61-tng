@@ -51,6 +51,24 @@ coloured cool→warm (turbo). Each distribution is weighted by **that ion's own 
    HVC absorption above the detection floor); (b) the per-galaxy HVC detection rate.
 9. **fig9_hvc_phase_space** — where the HVCs are: (a) mean radial velocity ⟨v_r⟩ mapped in the
    (R, z) disk-frame plane; (b) v_r vs galactocentric radius r.
+10. **fig10_detection_rate_vs_velocity** — SPECTRUM-based absorber detection rate vs velocity
+    offset Δv, **one curve per spectral line**. For each line, the fraction of the 14,400
+    sightlines whose LSF mock flux shows >10% absorption (flux < 0.9) in each Δv bin. The three
+    Si II lines (1190/1193/1260) are drawn separately (same colour, solid/dashed/dotted) to show
+    the line-strength dependence. Peaked at the ISM (Δv≈0) and falling into the HVC wings; H I
+    λ1216 is broad at all velocities because of Lyα damping wings (not true HVCs), while the
+    metal lines trace the real velocity-confined structure. `fig10_accumulate.py` + `fig10_plot.py`.
+
+## Data provenance (important)
+All column densities and velocities in these figures come **directly from the simulation gas
+cells along the Trident ray** — per-cell `N_ion = n_ion · dl` for columns, per-cell
+`v_rest = −v_los/1e5 − v_sys` (and galaxy-frame v_r, v_z) for velocities — **not from pyGad
+Voigt profile fits**. A separate pyGad Voigt-fitting pipeline exists in the project
+(`fit_*_pipeline*.py`) that fits the mock spectra for per-component N/v/b, but it is not used
+here. fig10 is the one figure built from the actual mock **spectra** (LSF flux), so it reflects
+what an observer detects; the other figures use the intrinsic gas quantities. (Tier-1 validation
+showed the gas column-weighted velocity equals the spectrum apparent-optical-depth velocity to
+<1 km/s, which justifies the gas-based velocities.)
 
 ## Caveat
 v_ISM here is the supervisor rotation-curve model, which is unbiased but coarse (≈ one value
