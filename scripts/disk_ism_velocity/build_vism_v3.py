@@ -43,13 +43,14 @@ RCV2 = Path("/scratch/tsingh65/m61-tng/outputs/disk_ism_velocity/rotation_curves
 V1 = Path("/scratch/tsingh65/m61-tng/outputs/disk_ism_velocity/vism_tables/vism_master_all_sightlines.csv")
 OUT = Path("/scratch/tsingh65/m61-tng/outputs/disk_ism_velocity/vism_tables_v3")
 
-R_SLIT = 5.0     # slit half-width (uhat) and v3a tube radius [kpc]
-R_TUBE = 5.0
+R_SLIT = 5.0     # slit half-width (uhat) for the v3b binned profile [kpc]
+R_TUBE = 1.0     # v3a tube radius around the ACTUAL sightline [kpc] (tight pencil)
 Z_SLIT = 3.0     # disk layer half-thickness [kpc]
 D_MAX = 40.0     # LOS depth limit [kpc]
 S_MIN, S_MAX, DS = -40.0, 40.0, 2.0
 N_MIN = 8        # min particles per bin/tube for a tracer to contribute
 SIGN = 1.0
+SIGMA_FRAC = 0.1   # disk edge = outermost R (beyond peak) with Sigma_cold > SIGMA_FRAC*peak
 EDGES = np.arange(S_MIN, S_MAX + DS, DS)
 CENT = 0.5 * (EDGES[:-1] + EDGES[1:])
 NB = len(CENT)
@@ -77,7 +78,7 @@ def main():
     sid = int(sys.argv[1])
     OUT.mkdir(parents=True, exist_ok=True)
     rc = dict(np.load(RCV2 / f"rc_sid{sid}.npz"))
-    center = rc["center_kpc"]; n_disk = rc["n_disk"]
+    center = rc["center_kpc"]; n_disk = rc["n_disk"]; e1 = rc["e1"]; e2 = rc["e2"]
     cc = np.array(json.loads(sid_paths(sid)["orient_json"].read_text())["center_ckpc_h"])
     sv = np.array(json.loads(sid_paths(sid)["subhalo_json"].read_text())["subhalo_vel_kms"])
     gal = dv.load_galaxy(sid, cc, sv, R_max=S_MAX + R_SLIT + 8.0)
@@ -86,6 +87,24 @@ def main():
     ym = gal["sage"] <= 0.3
     ypos = gal["spos"][ym]; yvel = gal["svel"][ym]; ymass = gal["sm"][ym]
     zg = gpos @ n_disk; zy = ypos @ n_disk
+
+    # ---- disk extent from the cold-gas surface-density profile (referee-proof edge) ----
+    # Sigma_cold(R) in the disk plane (|z|<Z_SLIT); disk edge = outermost radius past the peak
+    # where Sigma stays above SIGMA_FRAC x peak. R95/R90 of cold-gas mass are also reported but
+    # are inflated by sparse low-density tails, so R_disk_sigma is the operational edge.
+    Rcyl = np.hypot(gpos @ e1, gpos @ e2)
+    dcold = cold & (np.abs(zg) < Z_SLIT)
+    Redges = np.arange(0.0, 42.0, 2.0); Rcen = 0.5 * (Redges[:-1] + Redges[1:])
+    massR, _ = np.histogram(Rcyl[dcold], bins=Redges, weights=gal["gm"][dcold])
+    areaR = np.pi * (Redges[1:] ** 2 - Redges[:-1] ** 2) * (1e3 ** 2)   # pc^2
+    sigmaR = massR / areaR
+    speak = float(sigmaR.max()) if sigmaR.size and sigmaR.max() > 0 else 0.0
+    ipk = int(np.argmax(sigmaR))
+    above = np.where(sigmaR[ipk:] >= SIGMA_FRAC * speak)[0]
+    R_disk = float(Rcen[ipk + above[-1]]) if len(above) else float(Rcen[ipk])
+    cumR = np.cumsum(massR); cumR = cumR / cumR[-1] if cumR[-1] > 0 else cumR
+    R90c = float(np.interp(0.90, cumR, Rcen)); R95c = float(np.interp(0.95, cumR, Rcen))
+
     v1 = pd.read_csv(V1).set_index(["sid", "mode", "alpha_deg"])
 
     rows = []; profs = []; keys = []
@@ -113,11 +132,12 @@ def main():
             pop = np.isfinite(prof)
             if pop.any():
                 sp = CENT[pop]; vp = prof[pop]
-                if rho <= sp.max():
-                    v3b = float(np.interp(rho, sp, vp)); v3b_edge = False
-                else:
-                    v3b = float(vp[np.argmax(sp)]); v3b_edge = True
-                edge_R = float(sp.max())
+                # read at the impact parameter, but not past the disk edge (principled
+                # Sigma-based R_disk, further bounded by where the slit actually has gas)
+                edge_R = min(R_disk, float(sp.max()))
+                s_read = min(rho, edge_R)
+                v3b = float(np.interp(s_read, sp, vp))
+                v3b_edge = bool(rho > edge_R)
             else:
                 v3b = np.nan; v3b_edge = True; edge_R = np.nan
 
@@ -139,7 +159,8 @@ def main():
                              v3a_cold=vac, v3a_sf=vas, v3a_young=vay,
                              n_v3a=int((tg & cold).sum() + (tg & sfg).sum() + ty.sum()),
                              v3a_edge_fallback=v3a_edge, v3b_edge_fallback=v3b_edge,
-                             disk_edge_R=edge_R, n_slit_bins=int(pop.sum())))
+                             disk_edge_R=edge_R, R_disk_sigma=R_disk, R90_cold=R90c,
+                             R95_cold=R95c, n_slit_bins=int(pop.sum())))
             profs.append(prof); keys.append((mode, alpha))
     df = pd.DataFrame(rows)
     v1s = v1.reset_index()
@@ -150,7 +171,7 @@ def main():
     np.savez_compressed(OUT / f"slitprof_sid{sid}.npz", centers=CENT,
                         modes=np.array([k[0] for k in keys]),
                         alphas=np.array([k[1] for k in keys]),
-                        profiles=np.array(profs))
+                        profiles=np.array(profs), Rcen=Rcen, sigmaR=sigmaR, R_disk=R_disk)
     ind = df[df["in_disk_v1"] == True]
     for col in ("v_ism_v3a", "v_ism_v3b"):
         d = (ind[col] - ind.SiII_dip).dropna()

@@ -26,17 +26,32 @@ cancels rotation, because the impact side and its diametric opposite project wit
 sign; reading the single impact-parameter bin does not.) If ρ is beyond the outermost populated
 bin (the disk ends first), v3b = the **disk-edge bin value** (flagged `v3b_edge_fallback`).
 
-**v3a — along the actual sightline.** 3-tracer LOS velocity in a tube of radius R_TUBE=5 kpc
-around the real sightline (impact param ρ), disk layer |z|<3 kpc. If the tube is empty
-(sightline beyond the disk), v3a falls back to the v3b disk-edge value (flagged
-`v3a_edge_fallback`). This guarantees a value for every sightline.
+**v3a — along the actual sightline.** 3-tracer LOS velocity in a tight tube of radius
+**R_TUBE=1 kpc** (a pencil beam faithful to the sightline) around the real sightline (impact
+param ρ), disk layer |z|<3 kpc. If the tube is empty / under-populated (sightline beyond the
+disk or a sparse azimuth), v3a falls back to the v3b disk-edge value (flagged
+`v3a_edge_fallback`). This guarantees a value for every sightline. (A 1-kpc tube holds ~15–20
+cold-gas particles for well-sampled disks — enough — and 0 for compact ones, which correctly
+triggers the fallback.)
+
+## Disk extent — how "the disk ends" is defined
+A gas disk has no sharp edge (Σ falls off smoothly), so the edge is an operational choice. We
+measure the **cold-gas (T<10⁴ K) surface-density profile Σ_cold(R)** in the disk plane
+(|z|<3 kpc) per galaxy and define **R_disk = the outermost radius past the peak where
+Σ_cold > 10 % of its peak value** (`SIGMA_FRAC`). This is the operational edge used by the
+fallback: if ρ > R_disk (bounded also by where the slit actually has gas), v3b/v3a use the
+value at R_disk. R90/R95 of the cold-gas *mass* are also reported but are **inflated by sparse
+low-density tails** (e.g. 432106: R95_mass=35 kpc but R_disk=19 kpc — the real disk ends ~19),
+so R_disk is the reliable measure. `disk_extent_figure.py` → `diagnostics_v3/disk_extent.png`
+plots Σ_cold(R) with R_disk, R95, and ρ for all 20 galaxies; **13/20 have ρ inside the disk**,
+7 are at/beyond the edge (fallback regime).
 
 ## Validation vs the Si II 1260 dip (in-disk sightlines, 20 galaxies)
 
 | method | median − dip | **σ − dip** | n | comment |
 |---|---|---|---|---|
-| **v3a — along the sightline** | −1.4 | **21.0** | 9158 | per-orientation, lands on the absorption |
-| **v3b — binned slit @ impact** | −1.5 | **19.4** | 9158 | per-orientation, lands on the absorption |
+| **v3a — along the sightline (1-kpc tube)** | −1.4 | **18.9** | 9158 | per-orientation, lands on the absorption |
+| **v3b — binned slit @ impact** | −1.5 | **19.5** | 9158 | per-orientation, lands on the absorption |
 | v1 direct cool-gas (reference) | −1.1 | 15.5 | 6366 | cool-gas-only along the ray |
 | v2 — galaxy rotation curve | −3.6 | 46.2 | 9158 | ~one value per galaxy |
 
