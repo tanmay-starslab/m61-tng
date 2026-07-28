@@ -23,8 +23,12 @@ import h5py  # noqa: E402
 from pm_general import C_KMS  # noqa: E402
 import ray_ism_diagnostic as R  # noqa: E402
 
-V2 = Path("/scratch/tsingh65/m61-tng/outputs/disk_ism_velocity/vism_tables_v2/vism_master_v2.csv")
-OUT = Path("/scratch/tsingh65/m61-tng/outputs/disk_ism_velocity/diagnostics_v2/detection_rate")
+# args: <sid> [v_ism_column] [master_csv] [out_subdir]
+VCOL = sys.argv[2] if len(sys.argv) > 2 else "v_ism_model"
+MASTER = Path(sys.argv[3]) if len(sys.argv) > 3 else Path(
+    "/scratch/tsingh65/m61-tng/outputs/disk_ism_velocity/vism_tables_v2/vism_master_v2.csv")
+OUT = Path("/scratch/tsingh65/m61-tng/outputs/disk_ism_velocity/" +
+           (sys.argv[4] if len(sys.argv) > 4 else "diagnostics_v2/detection_rate"))
 # (spectrum key, rest wavelength) for all nine lines in the band
 LINES = [("H_I_1216", 1215.6701), ("O_I_1302", 1302.1685), ("C_II_1335", 1334.5323),
          ("Si_II_1190", 1190.4158), ("Si_II_1193", 1193.2897), ("Si_II_1260", 1260.4221),
@@ -37,7 +41,7 @@ NB = len(EDGES) - 1
 def main():
     sid = int(sys.argv[1])
     OUT.mkdir(parents=True, exist_ok=True)
-    m = pd.read_csv(V2); m = m[m.sid == sid].set_index(["mode", "alpha_deg"])
+    m = pd.read_csv(MASTER); m = m[m.sid == sid].set_index(["mode", "alpha_deg"])
     counts = np.zeros((len(LINES), NB), float)
     n_los = np.zeros(len(LINES), float)
     with h5py.File(R.combined_path(sid), "r") as h:
@@ -50,7 +54,7 @@ def main():
                 if (mode, alpha) not in m.index:
                     continue
                 row = m.loc[(mode, alpha)]
-                v_ism = float(row.v_ism_model); v_sys = float(row.v_sys)
+                v_ism = float(row[VCOL]); v_sys = float(row.v_sys)
                 if not np.isfinite(v_ism):
                     continue
                 ray = base[f"mode={mode}"][ag][list(base[f"mode={mode}"][ag].keys())[0]]

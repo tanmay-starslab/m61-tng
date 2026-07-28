@@ -16,8 +16,10 @@ import matplotlib.colors as mcolors
 sys.path.insert(0, "/home/tsingh65/m61-tng/scripts/disk_ism_velocity")
 import m61_style as S  # noqa: E402
 
-ACC = Path("/scratch/tsingh65/m61-tng/outputs/disk_ism_velocity/diagnostics_v2/detection_rate")
-S.FIGDIR = Path("/scratch/tsingh65/m61-tng/outputs/disk_ism_velocity/paper_figures_v2")
+_BASE = Path("/scratch/tsingh65/m61-tng/outputs/disk_ism_velocity")
+# args: [acc_subdir] [figdir_subdir]
+ACC = _BASE / (sys.argv[1] if len(sys.argv) > 1 else "diagnostics_v2/detection_rate")
+S.FIGDIR = _BASE / (sys.argv[2] if len(sys.argv) > 2 else "paper_figures_v2")
 
 # ion colour (turbo, neutral->high), then per-line (ion, linestyle, label)
 _SEQ = ["HI", "OI", "CII", "SiII", "SiIII", "SiIV", "NV"]
