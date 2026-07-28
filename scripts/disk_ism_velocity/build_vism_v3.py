@@ -1,27 +1,34 @@
 #!/usr/bin/env python3
-"""v3: two per-ORIENTATION disk-ISM velocities from the actual cutout gas/stars.
+"""v3 (corrected): two per-ORIENTATION disk-ISM velocities, giving a value for EVERY
+orientation and galaxy. Both use the three tracers (cold gas T<1e4, SF gas SFR>0, young stars
+age<300 Myr), density(gas)/mass(stars) weighted, with the LOS velocity computed DIRECTLY in the
+orientation (no projection): v_rest = +(v_pec_rest . los) (sign matches the ray / Si II dip).
 
-Both average the three supervisor tracers -- cold gas (T<1e4), SF gas (SFR>0), young stars
-(age<300 Myr) -- weighted by density (gas) / mass (stars), with v_rest = -(v_pec_rest . los)
-(galaxy rest frame; sign matches the ray convention, validated vs the Si II dip). They differ
-only in WHICH gas is sampled:
+Sky frame per orientation: rhat = unit(anchor-center) (impact-parameter direction, perp to los),
+los, uhat = rhat x los. Any particle: s = pos.rhat (impact coord), w = pos.uhat (transverse),
+depth = pos.los, z = pos.n_disk.
 
-  v3a  ALONG THE SIGHTLINE: tracers in a thin tube (perp < R_TUBE) around the actual line of
-       sight, near the disk plane (|z_disk| < Z_THICK, |path| < T_MAX). This is the gas the
-       QSO actually shines through -> lands on the absorption; custom per orientation.
-  v3b  CENTER -> IMPACT probe-line: tracers within R_AP of the line center + s*d_hat,
-       s in [-S_MAX, +S_MAX], d_hat = unit(anchor - center). Literal "line to the impact
-       point, extended +-40 kpc". Custom per orientation but averages the impact side with its
-       diametric opposite (rotation partly cancels).
+v3b -- BINNED IMPACT-PARAMETER SLIT: a rectangular slit through the centre along rhat, s in
+  [-40,+40] kpc, half-width R_SLIT (in uhat), disk layer |z|<Z_SLIT, depth |depth|<D_MAX. The
+  3-tracer density/mass-weighted LOS velocity is computed in DS-kpc bins of s -> a velocity
+  profile v(s). v3b = the profile value at the exact impact parameter s=rho (interpolated). If
+  rho is beyond the outermost populated bin (disk ends first), v3b = the disk-edge bin value
+  (flagged). This is NOT averaged over the slit, so rotation is not cancelled.
+
+v3a -- ALONG THE ACTUAL SIGHTLINE: 3-tracer LOS velocity in a tube of radius R_TUBE around the
+  real sightline (impact param rho), disk layer |z|<Z_SLIT. If the tube is empty (sightline
+  beyond the disk), v3a falls back to the v3b disk-edge value (flagged). Thicker tube than
+  before so more sightlines are populated directly.
 
 Usage: python build_vism_v3.py <sid>
-Output: vism_tables_v3/vism_v3_sid<sid>.csv  (v_ism_v3a, v_ism_v3b + components)
+Output: vism_tables_v3/vism_v3_sid<sid>.csv  +  vism_tables_v3/slitprof_sid<sid>.npz
 """
 from __future__ import annotations
-import os, sys, json
+import os, sys, json, warnings
 from pathlib import Path
 import numpy as np
 import pandas as pd
+warnings.filterwarnings("ignore")  # all-NaN-slice from nanmean over empty slit bins
 
 os.environ.setdefault("MPLBACKEND", "Agg")
 os.environ.setdefault("HDF5_USE_FILE_LOCKING", "FALSE")
@@ -30,16 +37,22 @@ sys.path.insert(0, "/scratch/tsingh65/m61-tng/scripts/disk_velocity_v2")
 sys.path.insert(0, "/home/tsingh65/m61-tng/scripts/disk_ism_velocity")
 from pm_general import get_geometry, get_original_rho, compute_endpoints, unit, sid_paths  # noqa: E402
 import dv_core as dv  # noqa: E402
-import ray_ism_diagnostic as R  # noqa: E402  (r95_cold_gas)
+import ray_ism_diagnostic as R  # noqa: E402
 
 RCV2 = Path("/scratch/tsingh65/m61-tng/outputs/disk_ism_velocity/rotation_curves_v2")
 V1 = Path("/scratch/tsingh65/m61-tng/outputs/disk_ism_velocity/vism_tables/vism_master_all_sightlines.csv")
 OUT = Path("/scratch/tsingh65/m61-tng/outputs/disk_ism_velocity/vism_tables_v3")
-# v3a (sightline tube)
-R_TUBE = 3.0; Z_THICK = 2.0; T_MAX = 40.0
-# v3b (center->impact probe-line)
-S_MAX = 40.0; R_AP = 5.0
-N_MIN = 10; SIGN = 1.0   # v_rest = +(v_pec_rest . los); matches ray/direct convention (calibrated)
+
+R_SLIT = 5.0     # slit half-width (uhat) and v3a tube radius [kpc]
+R_TUBE = 5.0
+Z_SLIT = 3.0     # disk layer half-thickness [kpc]
+D_MAX = 40.0     # LOS depth limit [kpc]
+S_MIN, S_MAX, DS = -40.0, 40.0, 2.0
+N_MIN = 8        # min particles per bin/tube for a tracer to contribute
+SIGN = 1.0
+EDGES = np.arange(S_MIN, S_MAX + DS, DS)
+CENT = 0.5 * (EDGES[:-1] + EDGES[1:])
+NB = len(CENT)
 
 
 def wmean(v, w):
@@ -47,29 +60,35 @@ def wmean(v, w):
     return float(np.average(v, weights=w)) if (len(v) and s > 0) else np.nan
 
 
-def avg_tracers(*vals):
-    ok = [v for v in vals if np.isfinite(v)]
-    return (float(np.mean(ok)), len(ok)) if ok else (np.nan, 0)
+def binned(s, wt, v, mask):
+    """Per-s-bin weighted-mean LOS velocity for particles in mask; NaN where n<N_MIN."""
+    bi = np.digitize(s[mask], EDGES) - 1
+    ok = (bi >= 0) & (bi < NB)
+    bi = bi[ok]; wk = wt[mask][ok]; vk = v[mask][ok]
+    sw = np.bincount(bi, weights=wk, minlength=NB)
+    swv = np.bincount(bi, weights=wk * vk, minlength=NB)
+    n = np.bincount(bi, minlength=NB)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        prof = np.where((n >= N_MIN) & (sw > 0), swv / sw, np.nan)
+    return prof
 
 
 def main():
     sid = int(sys.argv[1])
     OUT.mkdir(parents=True, exist_ok=True)
     rc = dict(np.load(RCV2 / f"rc_sid{sid}.npz"))
-    center = rc["center_kpc"]; n_disk = rc["n_disk"]; e1 = rc["e1"]; e2 = rc["e2"]
+    center = rc["center_kpc"]; n_disk = rc["n_disk"]
     cc = np.array(json.loads(sid_paths(sid)["orient_json"].read_text())["center_ckpc_h"])
     sv = np.array(json.loads(sid_paths(sid)["subhalo_json"].read_text())["subhalo_vel_kms"])
-    gal = dv.load_galaxy(sid, cc, sv, R_max=S_MAX + R_AP + 5.0)
+    gal = dv.load_galaxy(sid, cc, sv, R_max=S_MAX + R_SLIT + 8.0)
     gpos, gvel, grho, gT, gsfr = gal["gpos"], gal["gvel"], gal["grho"], gal["gT"], gal["gsfr"]
     cold = gT < 1e4; sfg = gsfr > 0
-    # pre-filter young stars (small subset) for speed
     ym = gal["sage"] <= 0.3
     ypos = gal["spos"][ym]; yvel = gal["svel"][ym]; ymass = gal["sm"][ym]
-    zg = gpos @ n_disk
-    R_edge = R.r95_cold_gas(sid)
+    zg = gpos @ n_disk; zy = ypos @ n_disk
     v1 = pd.read_csv(V1).set_index(["sid", "mode", "alpha_deg"])
 
-    rows = []
+    rows = []; profs = []; keys = []
     for mode in ("flip", "noflip"):
         for alpha in range(360):
             try:
@@ -79,67 +98,66 @@ def main():
             los = g["los"]; v_sys = g["v_sys"]
             rho, _, _ = get_original_rho(sid, mode, alpha)
             anchor = compute_endpoints(sid, mode, alpha, rho, 50.)["anchor_kpc"]
-            arel = anchor - center; d_hat = unit(arel)
-            vrest_g = SIGN * (gvel @ los)
-            vrest_y = SIGN * (yvel @ los)
+            rhat = unit(anchor - center); uhat = unit(np.cross(rhat, los))
+            sg = gpos @ rhat; wg = gpos @ uhat; dg = gpos @ los
+            sy = ypos @ rhat; wy = ypos @ uhat; dy = ypos @ los
+            vlg = SIGN * (gvel @ los); vly = SIGN * (yvel @ los)
 
-            # --- v3a: tube around the sightline, near the disk plane ---
-            tg = (gpos - arel) @ los
-            pg = (gpos - arel) - tg[:, None] * los
-            dperp_g = np.sqrt(np.einsum("ij,ij->i", pg, pg))
-            a_g = (dperp_g < R_TUBE) & (np.abs(zg) < Z_THICK) & (np.abs(tg) < T_MAX)
-            ty = (ypos - arel) @ los
-            py = (ypos - arel) - ty[:, None] * los
-            dperp_y = np.sqrt(np.einsum("ij,ij->i", py, py))
-            zy = ypos @ n_disk
-            a_y = (dperp_y < R_TUBE) & (np.abs(zy) < Z_THICK) & (np.abs(ty) < T_MAX)
+            # ---- v3b: binned slit profile v(s), 3-tracer average ----
+            base_g = (np.abs(wg) < R_SLIT) & (np.abs(zg) < Z_SLIT) & (np.abs(dg) < D_MAX)
+            base_y = (np.abs(wy) < R_SLIT) & (np.abs(zy) < Z_SLIT) & (np.abs(dy) < D_MAX)
+            pc = binned(sg, grho, vlg, base_g & cold)
+            ps = binned(sg, grho, vlg, base_g & sfg)
+            py = binned(sy, ymass, vly, base_y)
+            prof = np.nanmean(np.vstack([pc, ps, py]), axis=0)
+            pop = np.isfinite(prof)
+            if pop.any():
+                sp = CENT[pop]; vp = prof[pop]
+                if rho <= sp.max():
+                    v3b = float(np.interp(rho, sp, vp)); v3b_edge = False
+                else:
+                    v3b = float(vp[np.argmax(sp)]); v3b_edge = True
+                edge_R = float(sp.max())
+            else:
+                v3b = np.nan; v3b_edge = True; edge_R = np.nan
 
-            # --- v3b: cylinder around center->impact line ---
-            sg = gpos @ d_hat
-            pgb = gpos - sg[:, None] * d_hat
-            dperp_gb = np.sqrt(np.einsum("ij,ij->i", pgb, pgb))
-            b_g = (np.abs(sg) <= S_MAX) & (dperp_gb < R_AP)
-            sy = ypos @ d_hat
-            pyb = ypos - sy[:, None] * d_hat
-            dperp_yb = np.sqrt(np.einsum("ij,ij->i", pyb, pyb))
-            b_y = (np.abs(sy) <= S_MAX) & (dperp_yb < R_AP)
+            # ---- v3a: tube around the actual sightline (impact param rho) ----
+            pa_g = np.sqrt((sg - rho) ** 2 + wg ** 2)
+            tg = (pa_g < R_TUBE) & (np.abs(zg) < Z_SLIT) & (np.abs(dg) < D_MAX)
+            pa_y = np.sqrt((sy - rho) ** 2 + wy ** 2)
+            ty = (pa_y < R_TUBE) & (np.abs(zy) < Z_SLIT) & (np.abs(dy) < D_MAX)
+            vac = wmean(vlg[tg & cold], grho[tg & cold]) if (tg & cold).sum() >= N_MIN else np.nan
+            vas = wmean(vlg[tg & sfg], grho[tg & sfg]) if (tg & sfg).sum() >= N_MIN else np.nan
+            vay = wmean(vly[ty], ymass[ty]) if ty.sum() >= N_MIN else np.nan
+            av = [x for x in (vac, vas, vay) if np.isfinite(x)]
+            v3a_tube = float(np.mean(av)) if av else np.nan
+            v3a = v3a_tube if np.isfinite(v3a_tube) else v3b
+            v3a_edge = not np.isfinite(v3a_tube)
 
-            def tracer(mask_g, mask_y):
-                mc = mask_g & cold; ms = mask_g & sfg
-                vc = wmean(vrest_g[mc], grho[mc]) if mc.sum() >= N_MIN else np.nan
-                vs = wmean(vrest_g[ms], grho[ms]) if ms.sum() >= N_MIN else np.nan
-                vy = wmean(vrest_y[mask_y], ymass[mask_y]) if mask_y.sum() >= N_MIN else np.nan
-                v, nt = avg_tracers(vc, vs, vy)
-                return v, vc, vs, vy, nt, int(mc.sum()), int(ms.sum()), int(mask_y.sum())
-
-            va, vac, vas, vay, na, nac, nas, nay = tracer(a_g, a_y)
-            vb, vbc, vbs, vby, nb, nbc, nbs, nby = tracer(b_g, b_y)
-            R_anchor = float(np.hypot(arel @ e1, arel @ e2))
-            rec = dict(sid=sid, mode=mode, alpha_deg=alpha, rho_kpc=rho, v_sys=v_sys,
-                       R_anchor=R_anchor, R_edge=R_edge,
-                       v_ism_v3a=va, v3a_cold=vac, v3a_sf=vas, v3a_young=vay,
-                       n_v3a_cold=nac, n_v3a_sf=nas, n_v3a_young=nay, n_v3a_tracers=na,
-                       v_ism_v3b=vb, v3b_cold=vbc, v3b_sf=vbs, v3b_young=vby,
-                       n_v3b_cold=nbc, n_v3b_sf=nbs, n_v3b_young=nby, n_v3b_tracers=nb)
-            try:
-                r1 = v1.loc[(sid, mode, alpha)]
-                rec["SiII_dip"] = float(r1.SiII_dip)
-                rec["v_ism_direct_cool"] = float(r1.v_ism_direct_cool)
-                rec["in_disk_v1"] = bool(r1.in_disk)
-            except KeyError:
-                rec["SiII_dip"] = rec["v_ism_direct_cool"] = np.nan
-            rows.append(rec)
+            rows.append(dict(sid=sid, mode=mode, alpha_deg=alpha, rho_kpc=rho, v_sys=v_sys,
+                             v_ism_v3a=v3a, v_ism_v3b=v3b, v3a_tube=v3a_tube,
+                             v3a_cold=vac, v3a_sf=vas, v3a_young=vay,
+                             n_v3a=int((tg & cold).sum() + (tg & sfg).sum() + ty.sum()),
+                             v3a_edge_fallback=v3a_edge, v3b_edge_fallback=v3b_edge,
+                             disk_edge_R=edge_R, n_slit_bins=int(pop.sum())))
+            profs.append(prof); keys.append((mode, alpha))
     df = pd.DataFrame(rows)
-    p = OUT / f"vism_v3_sid{sid}.csv"; df.to_csv(p, index=False)
-    ind = df[df["in_disk_v1"] == True] if "in_disk_v1" in df else df
-    for col in ("v_ism_v3a", "v_ism_v3b", "v_ism_direct_cool"):
-        for lab, sub in (("all", df), ("in_disk", ind)):
-            d = (sub[col] - sub.SiII_dip).dropna()
-            if len(d):
-                std_a = sub.groupby("mode")[col].std().mean()
-                print(f"[SID {sid}] {col:18s} [{lab:7s}] -dip median {d.median():+6.1f} "
-                      f"sigma {(d-d.median()).abs().median()*1.4826:6.1f}; std/alpha {std_a:5.1f}; n={len(d)}")
-    print(f"  -> {p}")
+    v1s = v1.reset_index()
+    df = df.merge(v1s[["sid", "mode", "alpha_deg", "SiII_dip", "v_ism_direct_cool", "in_disk"]]
+                  .rename(columns={"in_disk": "in_disk_v1"}),
+                  on=["sid", "mode", "alpha_deg"], how="left")
+    df.to_csv(OUT / f"vism_v3_sid{sid}.csv", index=False)
+    np.savez_compressed(OUT / f"slitprof_sid{sid}.npz", centers=CENT,
+                        modes=np.array([k[0] for k in keys]),
+                        alphas=np.array([k[1] for k in keys]),
+                        profiles=np.array(profs))
+    ind = df[df["in_disk_v1"] == True]
+    for col in ("v_ism_v3a", "v_ism_v3b"):
+        d = (ind[col] - ind.SiII_dip).dropna()
+        print(f"[SID {sid}] {col}: finite {int(df[col].notna().sum())}/{len(df)}; in-disk -dip "
+              f"median {d.median():+.1f} sigma {(d-d.median()).abs().median()*1.4826:.1f} (n={len(d)})")
+    print(f"  v3a edge-fallback {int(df.v3a_edge_fallback.sum())}; v3b edge-fallback "
+          f"{int(df.v3b_edge_fallback.sum())}; both finite {int((df.v_ism_v3a.notna()&df.v_ism_v3b.notna()).sum())}/{len(df)}")
 
 
 if __name__ == "__main__":

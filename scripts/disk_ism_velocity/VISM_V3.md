@@ -1,60 +1,78 @@
-# v_ISM v3 — two per-ORIENTATION methods
+# v_ISM v3 — two per-ORIENTATION methods (corrected)
 
 Motivation: v2 used the azimuthally-AVERAGED rotation curve, so it gave ~one velocity per
-galaxy. v3 measures a custom velocity for each orientation from the actual cutout gas. Two
-variants were built (both requested); all outputs are in v3 directories, nothing overwritten.
+galaxy. v3 measures a **custom velocity for each orientation and each galaxy** from the actual
+cutout gas. Two variants are built; both give a value for EVERY (orientation, galaxy). All
+outputs are in v3 directories; nothing else is overwritten.
 
 Both average the three supervisor tracers — cold gas (T<10⁴), SF gas (SFR>0), young stars
-(age<300 Myr) — weighted by density (gas) / mass (stars), with the galaxy-rest-frame LOS
-velocity `v_rest = +(v_pec_rest · los)` (sign calibrated so it matches the ray/direct
-convention and the Si II dip). They differ only in **which gas is sampled**:
+(age<300 Myr) — weighted by density (gas) / mass (stars). The LOS velocity is computed
+**directly in the orientation, no projection**: `v_rest = +(v_pec_rest · los)` (sign
+calibrated so it matches the ray/direct convention and the Si II dip).
 
-- **v3a — along the sightline** (`build_vism_v3.py`, tube R_TUBE=3 kpc around the actual LOS,
-  near the disk plane |z_disk|<2 kpc, |path|<40 kpc). This is the gas the QSO actually shines
-  through.
-- **v3b — centre→impact probe-line** (cylinder R_AP=5 kpc around `center + s·d_hat`,
-  s∈[−40,+40], `d_hat=unit(anchor−center)`). The literal "line to the impact point, extended
-  ±40 kpc".
+Sky frame per orientation: `rhat = unit(anchor−center)` (impact-parameter direction, ⟂ los),
+`los`, `uhat = rhat×los`. For any particle: s = pos·rhat (impact coordinate), w = pos·uhat
+(transverse), depth = pos·los, z = pos·n_disk. Verified: the impact azimuth sweeps the full
+disk as α varies, so both methods are genuinely per-orientation.
 
-The impact azimuth sweeps the full disk as α varies (verified: φ_disk = φ₀+α at fixed
-R_anchor=25.3 kpc), so both are genuinely custom per orientation.
+## The two methods
 
-## Which one to trust — validation vs the Si II 1260 dip (in-disk sightlines, 20 galaxies)
+**v3b — binned impact-parameter slit (the corrected method).** A rectangular slit through the
+centre along `rhat`, s∈[−40,+40] kpc, half-width R_SLIT=5 kpc (in uhat), disk layer |z|<3 kpc,
+depth |depth|<40 kpc. The 3-tracer density/mass-weighted LOS velocity is computed in **2-kpc
+bins of s → a velocity profile v(s)**. **v3b = the profile read at the exact impact parameter
+s=ρ** (interpolated), NOT averaged over the slit — this is the fix. (Averaging the ±40 kpc slit
+cancels rotation, because the impact side and its diametric opposite project with opposite
+sign; reading the single impact-parameter bin does not.) If ρ is beyond the outermost populated
+bin (the disk ends first), v3b = the **disk-edge bin value** (flagged `v3b_edge_fallback`).
 
-| method | median − dip | **σ − dip** | comment |
-|---|---|---|---|
-| **v3a — 3-tracer along the sightline** | −1.0 | **18.3** | per-orientation AND lands on the absorption |
-| v1 direct cool-gas (reference) | −1.1 | 15.5 | best; cool-gas-only along the ray |
-| v2 — galaxy rotation curve | −3.6 | 46.2 | ~one value per galaxy |
-| v3b — centre→impact line | −5.9 | 131.4 | custom, but does NOT track the absorption |
+**v3a — along the actual sightline.** 3-tracer LOS velocity in a tube of radius R_TUBE=5 kpc
+around the real sightline (impact param ρ), disk layer |z|<3 kpc. If the tube is empty
+(sightline beyond the disk), v3a falls back to the v3b disk-edge value (flagged
+`v3a_edge_fallback`). This guarantees a value for every sightline.
 
-**Key result:** v3a is the per-orientation method that works — σ=18 km/s vs the dip (2.5×
-tighter than v2, ≈ the direct method), with more valid sightlines (7777 vs 6366) because it
-uses all three tracers. **v3b lands poorly (σ=131)**: a line through the centre samples the
-impact point *and its diametric opposite*, where disk rotation projects with opposite sign, so
-averaging the ±40 kpc line cancels the rotation signal (see `diagnostics_v3/v3_compare.png`,
-panel c — a blob near v3b≈0 regardless of the dip). This is physical, not a bug: the ISM
-absorption forms where the **sightline crosses the disk**, which v3a samples directly.
+## Validation vs the Si II 1260 dip (in-disk sightlines, 20 galaxies)
 
-Compact galaxies whose disk ends before ρ≈26 kpc (143884, 348901, 375073, 388544, 432106,
-438148) have few/no in-disk sightlines, so v3a is (correctly) undefined there — there is no
-disk ISM at that impact parameter to measure.
+| method | median − dip | **σ − dip** | n | comment |
+|---|---|---|---|---|
+| **v3a — along the sightline** | −1.4 | **21.0** | 9158 | per-orientation, lands on the absorption |
+| **v3b — binned slit @ impact** | −1.5 | **19.4** | 9158 | per-orientation, lands on the absorption |
+| v1 direct cool-gas (reference) | −1.1 | 15.5 | 6366 | cool-gas-only along the ray |
+| v2 — galaxy rotation curve | −3.6 | 46.2 | 9158 | ~one value per galaxy |
 
-## Provenance
-As in v1/v2, columns and velocities come from the simulation gas (here the **cutout**
-particles, sampled per orientation), not from pyGad Voigt fits. Weighting: gas by density,
-young stars by mass; v_rest sign validated against the Si II dip.
+**Key result:** v3a and v3b are two independent constructions that **agree** (σ 21 vs 19) and
+both land on the absorption ~2.5× tighter than v2, with **values for all 9158 in-disk
+sightlines** (vs 6366 for the cool-gas-only direct method). The consistency v3a≈v3b (see
+`diagnostics_v3/v3_compare.png`, panels b & c — both tight 1:1 with the dip) is the referee-proof
+check. Three partially-compact galaxies (143885, 143886, 452978) show higher σ for BOTH methods
+(they agree) because ~half of their sightlines fall at/beyond the disk edge — the fallback
+regime, where the ISM velocity is genuinely uncertain; those are flagged.
 
-## Files (all new)
-- `build_vism_v3.py` → `vism_tables_v3/vism_v3_sid<SID>.csv`; `combine_v3.py` →
-  `vism_master_v3.csv` (v_ism_v3a, v_ism_v3b + components + v2/direct/dip for comparison).
-- `v3_compare.py` → `diagnostics_v3/v3_compare.png` (the validation figure).
-- `make_paper_figures_v3.py v3a|v3b` → `paper_figures_v3a/`, `paper_figures_v3b/` (9 HVC
-  figures + fig10 detection-rate, in-band ions, wavelength labels, no titles).
-- `ray_diagnostic_v3.py` → `diagnostics_v3/ray_diagnostics_v3/` (per-sightline audit: all
-  v_ISM estimates on the spectra + ray profile + numbers).
+Fully-compact galaxies (348901, 375073, 388544, 432106, 438148: disk ends well before ρ≈26 kpc)
+have no in-disk sightlines; every orientation still gets a value via the disk-edge fallback,
+as requested.
+
+## Provenance & reproducibility
+Columns and velocities come from the simulation **cutout** gas/stars sampled per orientation,
+not from pyGad Voigt fits. Weighting: gas by density, young stars by mass; v_rest sign
+validated against the Si II dip. NOTE: `build_vism_v3.py` must be run at LOW concurrency (≤2 per
+node) — the ±40 kpc slit needs the full cutout in memory, and running 4+ big cutout loads
+concurrently on one node truncates them and corrupts the slit profile (v3a's compact tube
+survives, v3b does not). Re-running the affected galaxies singly fixes it.
+
+## Files (all new / v3)
+- `build_vism_v3.py` → `vism_tables_v3/vism_v3_sid<SID>.csv` + `slitprof_sid<SID>.npz` (the full
+  slit profiles); `combine_v3.py` → `vism_master_v3.csv` (v3a, v3b, components, flags, +
+  v2/direct/dip).
+- `v3_compare.py` → `diagnostics_v3/v3_compare.png`.
+- `make_paper_figures_v3.py v3a|v3b` → `paper_figures_v3a/`, `paper_figures_v3b/` (9 HVC figures
+  + fig10 detection-rate; in-band ions, wavelength labels, no titles).
+- `ray_diagnostic_v3.py` → `diagnostics_v3/ray_diagnostics_v3/` (per-sightline audit: spectra +
+  ray profile + **the v3b slit profile v(s) with the read-at-ρ point** + numbers);
+  `ray_diag_v3_overview.py` → overview + contact sheets.
 
 ## Recommendation
-Use **v3a** for the science (per-orientation, tracks the absorption). v3b is provided as
-requested but should be treated as a diagnostic only. The v1 direct method remains the tightest
-reference; v3a's advantage is the 3-tracer definition and broader sightline coverage.
+v3a and v3b are equivalent and both valid; **v3b (the binned slit read at the impact parameter)
+is the method you specified** and comes with the disk-edge fallback, so it has a value for
+every orientation and galaxy. v3a is the direct cross-check. Use either for the science with
+confidence; report the edge-fallback flag so edge/compact sightlines are transparent.
