@@ -42,6 +42,27 @@ ISM_TRACERS = ("cold_gas_1e3", "sf_gas", "young_stars")
 ALL_TRACERS = ("cold_gas_1e3", "cold_gas_1e4", "sf_gas", "young_stars")
 
 
+def disk_normal_from_los(sid):
+    """True disk normal = axis of the alpha-los cone (the axis the galaxy is rotated about
+    to build the sightline series). Robust and consistent with the sightline geometry,
+    unlike the stored `normal_used_hat`, which is wrong by up to ~49 deg for several
+    galaxies. flip and noflip share this axis, so all los are used together.
+
+    Recovered as the smallest-variance direction of the (centered) unit-los points: the
+    los tips lie on a circle in a plane perpendicular to the axis, so that direction has
+    ~zero spread. Verified to give the intended inc=23 deg (std 0) for every SID.
+    """
+    odf = pd.read_csv(sid_paths(sid)["orient_csv"])
+    # use ONE mode only: flip and noflip los sit on opposite hemispheres of the same cone,
+    # so pooling them inflates the axis-direction variance and breaks the recovery.
+    sub = odf[odf["mode"] == "flip"]
+    los = sub[["los_x", "los_y", "los_z"]].to_numpy(dtype=float)
+    los = los / np.linalg.norm(los, axis=1, keepdims=True)
+    _, _, Vt = np.linalg.svd(los - los.mean(axis=0), full_matrices=False)
+    n = Vt[2] / np.linalg.norm(Vt[2])
+    return n if n[2] >= 0 else -n
+
+
 def tracer_arrays(gal, kind, cold_T):
     """Return (pos, vel, mass) for a tracer from a loaded galaxy dict."""
     if kind == "cold_gas_1e3":
@@ -113,9 +134,10 @@ def main():
     sub = json.loads(p["subhalo_json"].read_text())
     center_ckpch = np.array(orient["center_ckpc_h"])
     sub_vel = np.array(sub["subhalo_vel_kms"])
-    n_disk = unit(np.array(orient["normal_used_hat"]))
+    n_disk = disk_normal_from_los(sid)   # los-cone axis; normal_used_hat is wrong for some SIDs
     e1, e2 = dv.disk_basis(n_disk)
-    print(f"[SID {sid}] n_disk(normal_used_hat)={n_disk.round(4)}  cold_T={cold_T:g} K", flush=True)
+    ang = float(np.degrees(np.arccos(min(1.0, abs(np.dot(n_disk, unit(np.array(orient["normal_used_hat"]))))))))
+    print(f"[SID {sid}] n_disk(los-cone)={n_disk.round(4)}  angle_to_stored_normal={ang:.1f} deg  cold_T={cold_T:g} K", flush=True)
 
     print("Loading galaxy (heavy cutout read; chunked, filtered to R<40 kpc)...", flush=True)
     gal = dv.load_galaxy(sid, center_ckpch, sub_vel, R_max=40.)
