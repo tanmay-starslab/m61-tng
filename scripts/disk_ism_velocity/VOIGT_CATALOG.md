@@ -50,15 +50,40 @@ pyGad's `v_kms` is the **raw** observed velocity. The rest-frame velocity on the
 convention as `v_ISM` and the ray velocities is
 
 ```
-v_rest = -v_kms - v_sys
+v_rest = -(v_obs_kms + v_zeropoint_kms) - v_sys     # zero-point: see below
 dv_v3a = v_rest - v_ism_v3a        # THE kinematic offset from the disk ISM
 dv_v3b = v_rest - v_ism_v3b
 dv_v1  = v_rest - v_ism_direct_cool
 ```
 
 Verified 2026-08-03 against the Si II 1260 flux minimum (`SiII_dip`) over four galaxies:
-this convention gives sigma = 7–33 km/s; every sign/offset alternative gives 200–640 km/s.
+the sign/offset convention gives sigma = 7–33 km/s; every alternative gives 200–640 km/s.
 It is the same convention as `fig10_accumulate.py`.
+
+### Si II 1260 rest-wavelength zero-point (CORRECTED IN THE CATALOG)
+
+pyGad's line list does not always match the wavelengths Trident used to synthesise the
+spectra. Recovering the rest wavelength pyGad actually assumed, from its own output,
+`lam0_pygad = lambda_A / (1 + v_obs/c)`:
+
+| line | pyGad lambda_0 | Trident lambda_0 | diff |
+|---|---|---|---|
+| H I, O I, C II, Si II 1190, Si II 1193, Si III, Si IV, N V | (match) | (match) | **0.0000 A** |
+| **Si II 1260** | **1260.5220** | 1260.4220 | **+0.1000 A** |
+
+0.1000 A = **+23.76 km/s**, reddening *every* Si II 1260 component. Uncorrected its median
+`dv` is **+24.67** km/s against **+0.39 … +1.20** for all eight other transitions;
+corrected it is **+0.91**. `build_voigt_catalog.py` now recovers this per row and corrects
+`v_rest`, storing `lam0_pygad` and `v_zeropoint_kms` so the fix stays auditable and applies
+itself if any other line list ever drifts.
+
+This was the cause of two things previously misattributed:
+* The Si II 1260 red/blue excess present at **all** velocities (including low |dv|, where the
+  S II lambda1259.519 blend at dv = +214.8 km/s cannot reach) was the zero-point, not the
+  blend. Uncorrected `f_blue - f_red` = -0.098 for Si II 1260 against -0.003…-0.022 for every
+  other line; corrected it falls in line at about -0.016.
+* The "+23.5 km/s median offset" seen when the velocity convention was first validated
+  against the Si II dip. The convention was right; this systematic was the whole offset.
 
 ## Traps
 
@@ -72,8 +97,10 @@ It is the same convention as `fig10_accumulate.py`.
 
 ## H I 1216 is not comparable to the metal lines
 
-H I was fit over a **±1200 km/s** window with **b_max = 150 km/s**; the metals used **±800**
-with b_max 50–100. Consequently **59.5%** of H I components sit *at* the b ceiling and
+H I was fit over a **±1200 km/s** window with **b_max = 150 km/s**. The metals used ±800 with
+b_max 50–100, **except Si II 1190 and Si II 1193, which used ±500** — those two set the
+`beyond_common_window` bound, it is not an arbitrary choice.
+Consequently **59.5%** of H I components sit *at* the b ceiling and
 **60.6%** lie beyond \|dv\| > 500 km/s. These are multi-component fits to the damped,
 saturated Lyman-alpha profile — not physical high-velocity clouds.
 
@@ -102,8 +129,16 @@ covering-fraction ordering.
   **0.392 / 0.344 / 0.313** (clean) for λ1260 / λ1193 / λ1190 — f·λ = 1487 / 686 / 330.
   A single-transition "HVC covering fraction" is therefore uncertain at the ~25% level
   purely through the choice of line.
-* **v3a and v3b agree to better than 0.002 per line** (Si II 1260: 0.433 vs 0.432 raw).
-  The observables are insensitive to which per-orientation v_ISM variant is adopted.
+* **v3a and v3b agree to 0.0003–0.0030 per line** (clean sample; the largest is N V at
+  0.0030, Si II 1260 is 0.0012). The observables are insensitive to which per-orientation
+  v_ISM variant is adopted.
+
+## Si II 1190/1193 fitting window
+
+λ1190 and λ1193 were fit over ±500 km/s while λ1260 used ±800 — a genuine mismatch. It does
+not drive the triplet ordering: restricting all three to the common ±500 window gives
+**0.425 / 0.354 / 0.320**, a shift of ≤0.007, and the ordering also survives the λ1260
+zero-point correction. Quote it, but it is not a confound.
 
 ## What the fits cannot tell you
 

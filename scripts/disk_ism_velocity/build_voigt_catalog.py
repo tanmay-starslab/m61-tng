@@ -33,6 +33,8 @@ sys.path.insert(0, "/home/tsingh65/m61-tng/scripts/disk_ism_velocity")
 import h5py  # noqa: E402
 import m61_voigt as V  # noqa: E402
 
+C_KMS = 299792.458
+
 OUT = V.VOIGT_DIR
 
 # fields kept from result_fieldnames (pyGad names on the left)
@@ -140,7 +142,23 @@ def build_sid(sid):
 
     # pyGad dv_kms is the UNCERTAINTY on v_kms -- rename so nothing can confuse it with dv
     C = C.rename(columns={"dv_kms": "v_err_kms", "v_kms": "v_obs_kms"})
-    C["v_rest"] = -C["v_obs_kms"] - C["v_sys"]
+
+    # ---- rest-wavelength zero-point correction (REQUIRED) ------------------------
+    # pyGad's line list does not always agree with the wavelengths Trident used to
+    # synthesise the spectra. Recover the rest wavelength pyGad actually assumed,
+    # lam0_pygad = lambda_A / (1 + v_obs/c), and correct the velocity onto Trident's
+    # scale. Verified 2026-08-03: eight of the nine transitions agree to 0.0000 A, but
+    # Si II 1260 was fit at 1260.5220 A against a spectrum synthesised at 1260.4220 A --
+    # a 0.1000 A / +23.76 km/s systematic that reddens EVERY Si II 1260 component.
+    # Uncorrected, its median dv is +24.67 km/s vs +0.39..+1.20 for all other lines;
+    # corrected it is +0.91. Doing this per row makes the fix self-applying if any other
+    # line list ever drifts.
+    lam0_trident = C["line"].map({L.key: L.lam0 for L in V.LINES})
+    C["lam0_pygad"] = C["lambda_A"] / (1.0 + C["v_obs_kms"] / C_KMS)
+    C["v_zeropoint_kms"] = C_KMS * (C["lam0_pygad"] - lam0_trident) / lam0_trident
+    # round to the nearest 0.01 km/s so per-row float noise does not leak into velocities
+    C["v_zeropoint_kms"] = C["v_zeropoint_kms"].round(2)
+    C["v_rest"] = -(C["v_obs_kms"] + C["v_zeropoint_kms"]) - C["v_sys"]
     C["dv_v3a"] = C["v_rest"] - C["v_ism_v3a"]
     C["dv_v3b"] = C["v_rest"] - C["v_ism_v3b"]
     C["dv_v1"] = C["v_rest"] - C["v_ism_direct_cool"]
