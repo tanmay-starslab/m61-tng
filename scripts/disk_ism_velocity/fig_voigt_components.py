@@ -35,6 +35,18 @@ FOUR THINGS ABOUT THE CATALOG THAT ARE HONOURED THROUGHOUT (see m61_voigt docstr
   * f*lambda is used ONLY to state the known Si II strength ordering
     (1260 : 1193 : 1190 = 1487 : 686 : 330 A) when discussing which transition saturates.
     It never enters a detection criterion.
+
+FIFTH THING -- Si II 1260 VELOCITY ZERO-POINT, FIXED UPSTREAM AND VERIFIED HERE:
+pyGad's line database (pygad/analysis/line_data.csv) has SiII1260 at 1260.5220 A while the
+spectra were synthesised by Trident at 1260.4220 A, so every fitted lambda1260 velocity was
+23.8 km/s too blue in v_obs, i.e. +23.8 km/s too RED in dv.  build_voigt_catalog.py now
+recovers lam0_pygad = lambda_A/(1 + v_obs/c) per row and removes the offset
+(`v_zeropoint_kms`).  It mattered most here in fig17: the cross-transition matcher uses a
+15-40 km/s tolerance, so the old constant ~24 km/s offset rejected genuine pairs and the
+completeness came out 0.62 / 0.60 instead of ~0.70 / ~0.69 (the median dlogN(weak - 1260)
+was robust to it, +0.212 vs +0.215).  Nothing is corrected inside THIS file -- that would
+double-count -- but fig17 re-measures the residual zero-point every run and will say so if
+the catalog is stale.
 """
 from __future__ import annotations
 
@@ -84,6 +96,11 @@ TOL_MIN, TOL_MAX, NSIG = 15.0, 40.0, 3.0
 
 # Si II strength ordering (f*lambda, Angstrom) -- annotation only, never a threshold.
 FLAM = {"Si_II_1260": 1487.3, "Si_II_1193": 686.1, "Si_II_1190": 329.7}
+# Si II 1260 velocity zero-point (see the module docstring): pyGad fit at 1260.5220 A,
+# Trident synthesised at 1260.4220 A. Removed in the catalog; kept here only to VERIFY.
+LAM_1260_PYGAD, LAM_1260_TRUE = 1260.5220, 1260.4220
+DV_1260_ZP = 299792.458 * (LAM_1260_PYGAD / LAM_1260_TRUE - 1.0)      # +23.8 km/s
+ZP_TOL = 5.0        # km/s; residual |median dv(1260) - dv(weak)| above this = stale catalog
 # column band used to separate the velocity trend from the column trend in fig17(d)
 NBAND = (13.5, 14.5)
 
@@ -123,9 +140,13 @@ def sightline_base(stat):
 
 
 def pdf(x, bins):
-    h, _ = np.histogram(np.asarray(x, float), bins=bins)
-    tot = h.sum()
-    return (h / tot) if tot else h.astype(float)
+    """Fraction of the SAMPLE per bin. Normalised by the number of finite values, not by
+    the in-range count, so anything falling outside `bins` shows up as missing area rather
+    than silently renormalising the curve upwards."""
+    x = np.asarray(x, float)
+    x = x[np.isfinite(x)]
+    h, _ = np.histogram(x, bins=bins)
+    return (h / x.size) if x.size else h.astype(float)
 
 
 def med_iqr(x):
@@ -371,6 +392,8 @@ def fig15_b_vs_logN(comp, stat, variant):
     a.set_ylabel("fraction of FITS with saturation in the fitted region")
     a.set_ylim(0, 1.30)
     a.set_xlim(-0.6, len(LKEYS) - 0.4)
+    S.tag(a, "RAW components; denominator = fits with\n"
+             r"$\geq1$ detected component (counts printed)", "ur", fs=8)
     a.legend(loc="lower left", fontsize=8.0, ncol=2)
     S.grid(a)
     S.panel_label(a, "(d)")
@@ -432,7 +455,10 @@ def fig15_b_vs_logN(comp, stat, variant):
               f"{u.logN.median():9.2f} {s.b_kms.median():7.1f} {u.b_kms.median():7.1f}")
 
     print("\nFRACTION OF FITS WHOSE REGION CONTAINS SATURATION (per fit, NOT per component;")
-    print("`sat` is constant across all components of a (sightline, transition) fit):")
+    print("`sat` is constant across all components of a (sightline, transition) fit).")
+    print("RAW sample; the denominator is fits with >=1 detected component (n columns), not "
+          "all 14400\nsightlines, and the class columns select fits having >=1 RAW component "
+          "of that class:")
     print(f"{'line':13s} {'all fits':>9s} {'n_fits':>7s} " +
           " ".join(f"{c+' fits':>10s} {'n':>6s}" for c in CLS_SEQ))
     for i, k in enumerate(LKEYS):
@@ -483,6 +509,10 @@ def _mult_panel(a, tab, nmax, xlab, raw_tab=None):
     a.set_yscale("log")
     a.set_xlim(-0.6, nmax + 0.6)
     a.set_ylim(2e-5, 1.8)
+    # the counts are clipped INTO the last bin, so label it as such (raw H I puts 3.3 per
+    # cent of its HVC sightlines there); an unlabelled pile-up reads as a real feature
+    a.set_xticks(xc)
+    a.set_xticklabels([str(i) for i in range(nmax)] + [r"$\geq%d$" % nmax])
     a.set_xlabel(xlab)
     a.set_ylabel("fraction of sightlines")
     S.grid(a)
@@ -704,6 +734,34 @@ def fig17_siII_triplet_consistency(comp, stat, variant):
               f"f(b at ceiling)={r.b_at_ceiling.mean():.3f}  "
               f"p99 |v_rest|={r.v_rest.abs().quantile(0.99):.0f} km/s")
 
+    # ── velocity zero-point regression check (see the module docstring) ─────────────
+    # The same absorber seen in two Si II transitions must sit at the same dv. pyGad fit
+    # lambda1260 at 1260.5220 A against a spectrum synthesised at 1260.4220 A, which used to
+    # put a constant +23.8 km/s between them -- comparable to the matching tolerance, so it
+    # rejected genuine pairs. build_voigt_catalog.py now removes it; verify that here,
+    # because a stale catalog would silently depress every completeness below.
+    zp = {}
+    for kw in (K93, K90):
+        pr = (comp3[comp3.line == K60][V.SLKEY + ["dv"]]
+              .merge(comp3[comp3.line == kw][V.SLKEY + ["dv"]], on=V.SLKEY,
+                     suffixes=("_a", "_b")))
+        s = (pr.dv_a - pr.dv_b).to_numpy()
+        s = s[np.abs(s) < 100.0]
+        zp[kw] = float(np.median(s)) if s.size else np.nan
+    print("[fig17] VELOCITY ZERO-POINT CHECK: median dv(1260) - dv(weak) over same-sightline "
+          "pairs\n        within 100 km/s (must be ~0; it was "
+          f"{DV_1260_ZP:+.1f} before the catalog fix):")
+    for kw in (K93, K90):
+        print(f"    1260 - {kw:12s} = {zp[kw]:+6.2f} km/s")
+    if max(abs(zp[K93]), abs(zp[K90])) > ZP_TOL:
+        raise SystemExit(
+            f"Si II 1260 velocity zero-point is NOT corrected (residual {zp} km/s vs "
+            f"expected {DV_1260_ZP:+.2f}). Rebuild voigt_components.parquet with the "
+            "current build_voigt_catalog.py -- the completeness below would be biased low.")
+    print(f"    -> within {ZP_TOL:.0f} km/s of zero, so the "
+          f"{TOL_MIN:.0f}-{TOL_MAX:.0f} km/s matching tolerance is not being spent on a "
+          "constant offset.")
+
     m93, _, n93b = match_transitions(comp3, K60, K93)
     m90, _, n90b = match_transitions(comp3, K60, K90)
 
@@ -775,10 +833,13 @@ def fig17_siII_triplet_consistency(comp, stat, variant):
             for v, cn in ((V.IVC, "IVC"), (V.HVC, "HVC")):
                 a.axvline(v, color=S.CLASS[cn], ls=":", lw=1.5)
             a.set_xlim(0, edges[-1])
-            S.tag(a, r"$\lambda1190,\lambda1193$ fit over $\pm%d\ \mathrm{km\,s^{-1}}$,"
-                     "\n" r"$\lambda1260$ over $\pm%d$ -- part of the high-$|\Delta v|$"
-                     "\n" "incompleteness is a fitting-window effect"
-                  % (win[K90], win[K60]), "ur", fs=8)
+            S.tag(a, (r"$\lambda1190,\lambda1193$ fit over $\pm%d\ \mathrm{km\,s^{-1}}$,"
+                      "\n" r"$\lambda1260$ over $\pm%d$ -- part of the high-$|\Delta v|$"
+                      "\n" "incompleteness is a fitting-window effect."
+                      % (win[K90], win[K60])) +
+                  "\n" r"Velocities are on the corrected zero-point"
+                  "\n" r"(residual $\lambda1260-\lambda1193 = %+.1f\ \mathrm{km\,s^{-1}}$)"
+                  % zp[K93], "ur", fs=8)
         else:
             a.set_xlim(edges[0], edges[-1])
         a.set_ylim(0, 1.28)

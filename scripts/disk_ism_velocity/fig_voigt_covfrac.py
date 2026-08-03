@@ -43,6 +43,20 @@ HONESTY NOTE (enforced in the panel text): the Voigt fits carry no galactocentri
 velocity, so blueshifted/redshifted is an OBSERVABLE PROXY, not an inflow/outflow
 measurement. The physical decomposition lives in the companion gas-based figure.
 
+Si II 1260 VELOCITY ZERO-POINT -- FIXED UPSTREAM, VERIFIED HERE:
+pyGad's line database (pygad/analysis/line_data.csv) lists SiII1260 at 1260.5220 A while the
+spectra were synthesised by Trident at 1260.4220 A, so every fitted lambda1260 velocity was
+23.8 km/s too blue in v_obs, i.e. +23.8 km/s too RED in dv (v_rest = -v_obs - v_sys).
+build_voigt_catalog.py now recovers lam0_pygad = lambda_A/(1 + v_obs/c) per row and removes
+the offset (`v_zeropoint_kms`); eight of the nine transitions need no correction. Before the
+fix Si II 1260's clean median dv was +24.6 km/s against +0.4...+1.2 for every other metal,
+its HVC blue/red split was 0.163/0.261 (ratio 1.60) and its HVC covering fraction 0.392;
+after the fix the median dv is +0.9, the split is in line with all other lines and f_c is
+0.382. Nothing is corrected inside THIS file -- the fix lives in the catalog and a second
+correction would double-count -- but report() re-verifies the zero-point every run and will
+flag any transition that drifts.  N.B. the mock spectra contain ONLY the nine fitted
+transitions (no S II, Fe II or C I), so blends with other species cannot occur at all.
+
 Usage:
     python fig_voigt_covfrac.py <v3a|v3b|both>      (default v3b)
     python fig_voigt_covfrac.py v3b --partial       dry run on whatever per-SID
@@ -86,12 +100,13 @@ CLEAN_NOTE = (r"components cleaned: $b$ not at the fitter ceiling, $|\Delta v|\l
 HI_NOTE = (r"$\mathrm{H\,I}$: raw high-velocity components are multi-component fits"
            "\n" r"to the damped Ly$\alpha$ profile, not clouds -- see the raw curve.")
 
-# S II 1259.519 falls inside the Si II 1260.422 fit window. Fit with the Si II rest
-# wavelength it gives v_obs = -215 km/s, and because v_rest = -v_obs - v_sys it lands at
-# dv = +215 km/s -- i.e. it masquerades as REDSHIFTED Si II 1260 absorption. Measured:
-# in |dv| = 115-315 km/s the Si II 1260 red/blue component ratio is 1.74, against 1.07
-# for 1193 and 1190, so most of 1260's redshifted excess is this blend, not gas motion.
-DV_SII_BLEND = -299792.458 * (1259.519 / 1260.422 - 1.0)      # +214.8 km/s
+# Si II 1260 velocity zero-point (see the module docstring): pyGad fit this line with
+# lambda0 = 1260.5220 A (pygad/analysis/line_data.csv) against a spectrum synthesised at
+# 1260.4220 A. build_voigt_catalog.py removes the resulting +23.8 km/s reddening; the
+# numbers below are kept only so report() can VERIFY that the correction is in the catalog.
+LAM_1260_PYGAD, LAM_1260_TRUE = 1260.5220, 1260.4220
+DV_1260_ZP = 299792.458 * (LAM_1260_PYGAD / LAM_1260_TRUE - 1.0)      # +23.8 km/s
+ZP_TOL = 3.0        # km/s; a per-line |median dv| above this means the fix is not applied
 
 
 def clean_sample(comp):
@@ -238,11 +253,6 @@ def fig11(comp, raw, stat, variant):
            label=RAW_LAB, zorder=4, **RAW_KW)
     S.shade_classes(a)
     a.axvline(0.0, color="0.35", ls=":", lw=1.1)
-    a.axvline(DV_SII_BLEND, color=V.LINE_BY_KEY["Si_II_1260"].color, ls=(0, (1, 2)),
-              lw=1.3, alpha=0.95, zorder=5)
-    a.text(DV_SII_BLEND + 12, 7.0, r"$\mathrm{S\,II}\ \lambda1259.5$ blend", rotation=90,
-           ha="left", va="bottom", fontsize=8.0,
-           color=V.LINE_BY_KEY["Si_II_1260"].color, zorder=6)
     a.set_xlim(-500, 500)
     a.set_yscale("log")
     a.set_ylim(0.6 * floor, 160)
@@ -329,8 +339,9 @@ def fig11(comp, raw, stat, variant):
         rf"$\lambda1260 = {f60:.1f}{PCT}$,  $\lambda1193 = {f93:.1f}{PCT}$,  "
         rf"$\lambda1190 = {f90:.1f}{PCT}$",
         rf"$f_{{1260}}/f_{{1190}} = {ratio:.2f}$",
-        r"($\lambda1260$'s redshifted excess is partly the",
-        r"$\mathrm{S\,II}\ \lambda1259.5$ blend at $\Delta v \simeq +215$)"]),
+        r"(velocities are on the corrected zero-point: pyGad fit",
+        r"$\lambda1260$ at $1260.522\,\mathrm{\AA}$ against a spectrum made at",
+        r"$1260.422$; the $+23.8\ \mathrm{km\,s^{-1}}$ is removed in the catalog)"]),
         transform=c.transAxes, ha="right", va="top", fontsize=8.5, zorder=8,
         bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="0.6", alpha=0.92))
     fig.tight_layout()
@@ -519,7 +530,42 @@ def load(partial=False):
     return comp, stat
 
 
-def report(variant, rows, siii, halves, asym, plane):
+def zero_point_check(comp, variant):
+    """REGRESSION CHECK on the rest-wavelength zero-point.
+
+    The same gas is fit in nine transitions, so the median dv must be ~0 in all of them.
+    It was not: pyGad fit Si II 1260 at 1260.5220 A against a spectrum synthesised at
+    1260.4220 A, reddening every lambda1260 component by +23.8 km/s.
+    build_voigt_catalog.py now removes this (column `v_zeropoint_kms`); this function
+    verifies the correction is present and that no other transition has drifted."""
+    print(f"\nVELOCITY ZERO-POINT per transition (clean sample, {variant}) -- median dv "
+          "must be ~0 in all lines:")
+    has_zp = "v_zeropoint_kms" in comp.columns
+    print(f"  {'line':14s} {'median dv':>10s} {'mean dv':>9s} "
+          f"{'v_zp applied':>13s} {'lam0_pygad':>11s}")
+    bad = []
+    for L in V.LINES:
+        s = comp[comp.line == L.key]
+        m = float(s[f"dv_{variant}"].median())
+        zp = float(s["v_zeropoint_kms"].median()) if has_zp else np.nan
+        l0 = float(s["lam0_pygad"].median()) if has_zp else np.nan
+        if abs(m) > ZP_TOL and L.key != HI:      # H I's median is set by the damping wings
+            bad.append(L.key)
+        print(f"  {L.key:14s} {m:10.2f} {float(s[f'dv_{variant}'].mean()):9.2f} "
+              f"{zp:13.2f} {l0:11.4f}")
+    if not has_zp:
+        raise SystemExit("catalog has no `v_zeropoint_kms` column -- rebuild it with the "
+                         "current build_voigt_catalog.py before making paper figures")
+    if bad:
+        raise SystemExit(f"velocity zero-point NOT corrected for {bad} (|median dv| > "
+                         f"{ZP_TOL} km/s) -- rebuild the catalog")
+    print(f"  OK: the {DV_1260_ZP:+.2f} km/s Si II 1260 offset (lambda0 = {LAM_1260_PYGAD} A "
+          f"in pyGad vs\n      {LAM_1260_TRUE} A in the spectra) is removed in the catalog; "
+          "every line is within\n      "
+          f"{ZP_TOL:.0f} km/s of zero, so the blue/red splits above are usable.")
+
+
+def report(variant, comp, rows, siii, halves, asym, plane):
     print(f"\n{'='*104}\nVOIGT COVERING FRACTIONS -- variant {variant}\n{'='*104}")
     print("HVC = |dv| >= 100 km/s. 'cleaned' = ~b_at_ceiling & ~beyond_common_window "
           "(the science sample); 'raw' = every detected component.")
@@ -539,6 +585,28 @@ def report(variant, rows, siii, halves, asym, plane):
     print(f"H I logN_1/2: cleaned {halves.get('H_I_1216', np.nan):.2f}  raw {hraw:.2f}")
     print("plane (fig13) f_c at |dv|>=100, lowest column cut: "
           + "  ".join(f"{k}={v:.4f}" for k, v in plane.items()))
+    # fig12(b)'s cumulative blue/red at the lowest column must reproduce the blue/red
+    # split above (same sightline counting, no effective column cut) -- cheap self-check.
+    worst = max(max(abs(asym[L.key][0] - fb), abs(asym[L.key][1] - fr))
+                for (L, ft, kt, nt, fb, kb, fr, kr, gt, jt, gb, gr) in rows)
+    print(f"fig12(b) blue/red at logN >= {LOGN_GRID[0]:.1f} reproduces the blue/red split "
+          f"to {worst:.1e}")
+    # The clean cut removes components whose b is at the fitter ceiling but NOT components
+    # whose logN is at the fitter's upper bound -- and most clean H I components sit there.
+    print("\nCOMPONENTS AT THE FITTER'S logN CEILING, i.e. within 0.05 dex of the highest "
+          "fitted\nlogN of that transition (clean sample; the clean cut does NOT remove "
+          "these):")
+    for L in V.LINES:
+        s = comp[comp.line == L.key]["logN"]
+        if not len(s):
+            continue
+        hi = float(s.max())
+        print(f"  {L.key:14s} logN_max = {hi:5.2f}   fraction at the ceiling: "
+              f"{float((s >= hi - 0.05).mean()):.3f}")
+    print("  -> H I's logN_1/2 quoted above, and its logN distribution in fig12, are the "
+          "fitter's\n     bound (logN_bounds = 12.3-19.5), not a measured column. The metals "
+          "are clean (<= 3 per cent).")
+    zero_point_check(comp, variant)
 
 
 def main():
@@ -571,7 +639,7 @@ def main():
         t0 = time.time()
         plane = fig13(comp, stat, v)
         print(f"  fig13 done ({time.time()-t0:.0f}s)", flush=True)
-        report(v, rows, siii, halves, asym, plane)
+        report(v, comp, rows, siii, halves, asym, plane)
 
 
 if __name__ == "__main__":

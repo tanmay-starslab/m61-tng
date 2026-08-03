@@ -6,8 +6,9 @@ and fig9 (one HVC phase-space map) by *resolving* the inflow/outflow split, the 
 structure and the spatial geometry as a function of velocity:
 
   fig22_inflow_outflow_vs_velocity  inflow fraction vs |dv| and vs signed dv, per ion,
-                                    with sightline-bootstrap bands; plus <v_r> in the
-                                    (dv, logT) plane -- the multiphase kinematics in one map.
+                                    with GALAXY-bootstrap bands (n_gal = 20; see galcodes
+                                    -- a sightline bootstrap is 5-7x too narrow); plus
+                                    <v_r> in the (dv, logT) plane.
   fig23_hvc_phase_structure         median logT and Z/Zsun vs |dv| per ion (16-84 bands),
                                     and the metallicity of inflowing vs outflowing HVC gas.
   fig24_geometry_of_the_flow        where the HVC gas sits: (R_disk, z_disk) column maps for
@@ -23,6 +24,11 @@ N_SiII), so all panels are ion-level and are labelled with the ion. Nothing here
 observational detection: the transition-resolved detection statistics come from the pyGad
 Voigt fits (a fitted component with UpLim == False) and are handled elsewhere. No column
 floor, oscillator strength or curve-of-growth threshold is used anywhere in this file.
+
+SAMPLE: the absorbing-cell catalog with the Tier-0b clean mask (periodic-wrap and
+hypervelocity cells dropped, 0.3 per cent); stated in the run header.
+RESAMPLING UNIT: every plotted band and error bar bootstraps GALAXIES, not sightlines --
+the 720 orientations of one galaxy are the same object seen 720 ways.  See galcodes().
 
 Usage: python fig_kinematics.py <v3a|v3b>     (default v3b)
 Output: /scratch/.../disk_ism_velocity/paper_figures_<variant>/fig22..fig25 (pdf + png)
@@ -100,11 +106,27 @@ def wmedian(x, w):
 
 
 def slcodes(cells):
-    """Integer sightline id 0..n-1 for (sid, mode, alpha) -- the bootstrap resampling unit."""
+    """Integer sightline id 0..n-1 for (sid, mode, alpha)."""
     mode = pd.factorize(cells["mode"])[0]
     key = (cells["sid"].to_numpy(np.int64) * 10000
            + mode.astype(np.int64) * 1000 + cells["alpha"].to_numpy(np.int64))
     _, codes = np.unique(key, return_inverse=True)
+    return codes.astype(np.int64), int(codes.max()) + 1
+
+
+def galcodes(cells):
+    """Integer GALAXY id 0..n_gal-1 -- the resampling unit used for every plotted band.
+
+    WHY NOT SIGHTLINES.  The 720 sightlines of one galaxy are 720 viewing angles of the
+    SAME object at the same impact parameter, 0.45 kpc apart on the sky; they are not 720
+    independent draws from the galaxy population.  Every statement made from these figures
+    ("cool ions do X, warm-hot ions do Y") is a statement about galaxies, so the galaxy is
+    the independent unit and n = 20, not n = 14205.  Measured directly (leave-one-galaxy-out
+    jackknife vs sightline bootstrap on f_in(HVC)), a sightline bootstrap understates the
+    uncertainty by a factor 5.3-6.7 for every ion tested, and on the HVC inflow/outflow
+    metallicity contrast of fig23c by up to 8x.  The reports print both.
+    """
+    _, codes = np.unique(cells["sid"].to_numpy(np.int64), return_inverse=True)
     return codes.astype(np.int64), int(codes.max()) + 1
 
 
@@ -120,9 +142,10 @@ def _boot_counts(n_sl, nboot, seed):
 def flow_profile(x, w, vr, bins, codes, n_sl, nboot=NBOOT, seed=7, sub=None):
     """Column-weighted inflow fraction (v_r<0) of weight w in bins of x.
 
-    The bootstrap resamples whole sightlines (not cells), so the band accounts for the
-    fact that the ~90 cells of one sightline are not independent measurements.
-    Returns (centres, f, lo, hi, Ntot_per_bin).
+    `codes` / `n_sl` set the BOOTSTRAP RESAMPLING UNIT.  Pass galaxy codes (galcodes) for
+    the honest band -- the 720 sightlines of a galaxy are not independent (see galcodes).
+    Passing sightline codes gives a band 5-7x too narrow; that variant is printed in the
+    reports for reference only.  Returns (centres, f, lo, hi, Ntot_per_bin).
     """
     x = np.asarray(x, float)
     w = np.asarray(w, float)
@@ -179,7 +202,10 @@ def wq_profile(x, y, w, bins, qs=(0.16, 0.5, 0.84), sub=None):
 
 
 def wmedian_boot(x, w, codes, n_sl, nboot=200, seed=11, q=0.5):
-    """Column-weighted quantile + 16-84 sightline-bootstrap interval. Returns (v, lo, hi)."""
+    """Column-weighted quantile + 16-84 bootstrap interval over the unit given by `codes`.
+
+    Pass galcodes for the galaxy-level (honest) interval; slcodes gives the far narrower
+    sightline-level one.  Returns (v, lo, hi)."""
     x = np.asarray(x, float)
     w = np.asarray(w, float)
     ok = np.isfinite(x) & np.isfinite(w) & (w > 0)
@@ -196,6 +222,35 @@ def wmedian_boot(x, w, codes, n_sl, nboot=200, seed=11, q=0.5):
         vals[i] = _wq_sorted(x, w * cnt[c], q)
     lo, hi = np.percentile(vals, [16, 84])
     return v, float(lo), float(hi)
+
+
+def ion_temp_ticks(ax, medT, keys, dmin=0.055, fs=7.6):
+    """Right-hand ticks marking each ion's median log T.
+
+    H I, O I, C II and Si II all sit within ~0.05 dex of log T = 4.0, so nine separate
+    labels overprint and only the last one drawn is legible.  Ions closer than `dmin` are
+    merged into ONE tick with a combined label, so all nine ions are always shown.
+    """
+    order = sorted(keys, key=lambda k: medT[k])
+    groups = [[order[0]]]
+    for k in order[1:]:
+        if medT[k] - medT[groups[-1][-1]] < dmin:
+            groups[-1].append(k)
+        else:
+            groups.append([k])
+    for g in groups:
+        y = float(np.mean([medT[k] for k in g]))
+        for j, k in enumerate(g):          # one coloured stub per ion in the group
+            x0 = 1.0 + 0.022 * j
+            ax.plot([x0, x0 + 0.020], [medT[k]] * 2, color=ICOL[k], lw=2.4,
+                    transform=ax.get_yaxis_transform(), solid_capstyle="butt",
+                    clip_on=False, zorder=6)
+        # stacked vertically for merged groups so the label stays narrow and never
+        # runs into the colourbar
+        ax.text(1.012 + 0.022 * len(g), y, "\n".join(ILAB[k] for k in g),
+                color=ICOL[g[-1]] if len(g) == 1 else "0.15", fontsize=fs,
+                ha="left", va="center", linespacing=1.05,
+                transform=ax.get_yaxis_transform(), clip_on=False, zorder=6)
 
 
 def boxtext(ax, x, y, text, ha="right", va="center", fs=8.5):
@@ -248,7 +303,7 @@ def enclosing_levels(img, fracs=(0.5, 0.9)):
 # ═══════════════════════════════════════════════════════════════════════════════
 # fig22 -- inflow / outflow resolved by velocity
 # ═══════════════════════════════════════════════════════════════════════════════
-def fig22_inflow_outflow_vs_velocity(cells, n_sl, codes, n_slc):
+def fig22_inflow_outflow_vs_velocity(cells, n_sl, codes, n_slc, gcodes, n_gal):
     adv = cells["dv"].abs().to_numpy()
     sdv = cells["dv"].to_numpy()
     vr = cells["v_r"].to_numpy()
@@ -261,7 +316,7 @@ def fig22_inflow_outflow_vs_velocity(cells, n_sl, codes, n_slc):
     res = {}
     for k in IONSEQ:
         w = cells[f"N_{k}"].to_numpy()
-        xc, f, lo, hi, tot = flow_profile(adv, w, vr, DVB, codes, n_slc)
+        xc, f, lo, hi, tot = flow_profile(adv, w, vr, DVB, gcodes, n_gal)
         res[k] = (xc, f, lo, hi, tot)
         a.plot(xc, f, "-", color=ICOL[k], lw=2.0, label=ILAB[k], zorder=4)
         if k in ANCHORS:
@@ -271,7 +326,7 @@ def fig22_inflow_outflow_vs_velocity(cells, n_sl, codes, n_slc):
     a.axvline(HVC, color=S.CLASS["HVC"], ls=":", lw=1.4)
     a.set_xlim(0, 500)
     a.set_ylim(0.10, 1.10)
-    a.set_xlabel(r"$|\Delta v| = |v_{\mathrm{los}} - v_{\mathrm{ISM}}|\ \ [\mathrm{km\,s^{-1}}]$")
+    a.set_xlabel(r"$|\Delta v| = |v_{\mathrm{rest}} - v_{\mathrm{ISM}}|\ \ [\mathrm{km\,s^{-1}}]$")
     a.set_ylabel(r"inflowing fraction of ion column, $f_{\rm in}(v_r<0)$")
     a.text(0.975, 0.955, "inflow-dominated", transform=a.transAxes, color=S.INFLOW,
            ha="right", va="top", fontsize=9)
@@ -287,7 +342,7 @@ def fig22_inflow_outflow_vs_velocity(cells, n_sl, codes, n_slc):
     sres = {}
     for k in IONSEQ:
         w = cells[f"N_{k}"].to_numpy()
-        xc, f, lo, hi, tot = flow_profile(sdv, w, vr, SDVB, codes, n_slc, seed=17)
+        xc, f, lo, hi, tot = flow_profile(sdv, w, vr, SDVB, gcodes, n_gal, seed=17)
         sres[k] = (xc, f, lo, hi, tot)
         b.plot(xc, f, "-", color=ICOL[k], lw=2.0, label=ILAB[k], zorder=4)
         if k in ANCHORS:
@@ -297,7 +352,7 @@ def fig22_inflow_outflow_vs_velocity(cells, n_sl, codes, n_slc):
     b.axvline(0, color="0.35", ls=":", lw=1.2)
     b.set_xlim(-500, 500)
     b.set_ylim(0.10, 1.20)
-    b.set_xlabel(r"$\Delta v = v_{\mathrm{los}} - v_{\mathrm{ISM}}\ \ [\mathrm{km\,s^{-1}}]$")
+    b.set_xlabel(r"$\Delta v = v_{\mathrm{rest}} - v_{\mathrm{ISM}}\ \ [\mathrm{km\,s^{-1}}]$")
     b.set_ylabel(r"inflowing fraction of ion column, $f_{\rm in}(v_r<0)$")
     b.text(-480, 0.90, "blueshifted", fontsize=9, color="0.3", ha="left", va="top",
            transform=b.get_xaxis_transform())
@@ -327,11 +382,7 @@ def fig22_inflow_outflow_vs_velocity(cells, n_sl, codes, n_slc):
     medT = {}
     for k in IONSEQ:
         medT[k] = wmedian(logT, cells[f"N_{k}"].to_numpy())
-    for k in ("HI", "SiIII", "SiIV", "CIV", "NV", "OVI"):
-        c.plot([1.0, 1.022], [medT[k]] * 2, color=ICOL[k], lw=2.4, transform=c.get_yaxis_transform(),
-               solid_capstyle="butt", clip_on=False, zorder=6)
-        c.text(1.032, medT[k], ILAB[k], color=ICOL[k], fontsize=8.0, ha="left", va="center",
-               transform=c.get_yaxis_transform(), clip_on=False, zorder=6)
+    ion_temp_ticks(c, medT, IONSEQ)
     S.panel_label(c, "(c)")
     S.tag(c, r"$\langle v_r\rangle$ per cell; ticks $=$ median $T$ per ion", "lr", fs=8.5)
 
@@ -368,7 +419,8 @@ def fig22_inflow_outflow_vs_velocity(cells, n_sl, codes, n_slc):
     print("  x50 smooth  = same on a 3-bin running mean (the raw curve oscillates about 0.5)")
     print("  x50 sustain = |dv| beyond which f_in stays below 0.5 all the way to 500 km/s")
     print("  'none' = that condition is never met over 0-500 km/s (i.e. inflow-dominated).")
-    print("  bootstrap 1-sigma on f_in in the HVC bins (250 sightline resamples):")
+    print(f"  bootstrap 1-sigma on f_in in the HVC bins ({NBOOT} GALAXY resamples, n_gal="
+          f"{n_gal}; a sightline bootstrap would be ~5-7x narrower and is NOT used):")
     for k in IONSEQ:
         xc, f, lo, hi, tot = res[k]
         m = xc >= HVC
@@ -390,7 +442,7 @@ def fig22_inflow_outflow_vs_velocity(cells, n_sl, codes, n_slc):
 # ═══════════════════════════════════════════════════════════════════════════════
 # fig23 -- phase structure of the high-velocity gas
 # ═══════════════════════════════════════════════════════════════════════════════
-def fig23_hvc_phase_structure(cells, n_sl, codes, n_slc):
+def fig23_hvc_phase_structure(cells, n_sl, codes, n_slc, gcodes, n_gal):
     adv = cells["dv"].abs().to_numpy()
     vr = cells["v_r"].to_numpy()
     logT = cells["logT"].to_numpy()
@@ -440,17 +492,25 @@ def fig23_hvc_phase_structure(cells, n_sl, codes, n_slc):
     # ── (c) HVC metallicity: inflow vs outflow, per ion ─────────────────────────
     xk = np.arange(len(IONSEQ))
     zin, zout, zism = [], [], []
+    zin_sl, zout_sl = [], []
     for k in IONSEQ:
         w = cells[f"N_{k}"].to_numpy()
         zin.append(wmedian_boot(logZ[hv & (vr < 0)], w[hv & (vr < 0)],
-                                codes[hv & (vr < 0)], n_slc, seed=21))
+                                gcodes[hv & (vr < 0)], n_gal, seed=21, nboot=400))
         zout.append(wmedian_boot(logZ[hv & (vr > 0)], w[hv & (vr > 0)],
-                                 codes[hv & (vr > 0)], n_slc, seed=23))
+                                 gcodes[hv & (vr > 0)], n_gal, seed=23, nboot=400))
+        # sightline-level interval, printed for comparison only (5-8x too narrow)
+        zin_sl.append(wmedian_boot(logZ[hv & (vr < 0)], w[hv & (vr < 0)],
+                                   codes[hv & (vr < 0)], n_slc, seed=21))
+        zout_sl.append(wmedian_boot(logZ[hv & (vr > 0)], w[hv & (vr > 0)],
+                                    codes[hv & (vr > 0)], n_slc, seed=23))
         m = adv < IVC
         zism.append(wmedian(logZ[m], w[m]))
     zin = np.array(zin)
     zout = np.array(zout)
     zism = np.array(zism)
+    zin_sl = np.array(zin_sl)
+    zout_sl = np.array(zout_sl)
     c.plot(xk, zism, ":", color=S.CLASS["ISM"], lw=1.8, marker="d", ms=5,
            label=S.CLASS_LABEL["ISM"] + " gas", zorder=3)
     c.errorbar(xk, zin[:, 0], yerr=np.clip([zin[:, 0] - zin[:, 1], zin[:, 2] - zin[:, 0]],
@@ -476,7 +536,9 @@ def fig23_hvc_phase_structure(cells, n_sl, codes, n_slc):
     c.legend(loc="lower right", fontsize=8.5)
     S.grid(c)
     S.panel_label(c, "(c)")
-    S.tag(c, r"$\Delta\log Z=$ out $-$ in", "ur", fs=8.5)
+    S.tag(c, r"$\Delta\log Z=$ out $-$ in" + "\n"
+          + r"bars: 16--84th pct, bootstrap over the 20 GALAXIES" + "\n"
+          + r"(a sightline bootstrap is 5--8$\times$ narrower)", "ur", fs=7.4)
 
     fig.tight_layout()
     p = S.save(fig, "fig23_hvc_phase_structure")
@@ -492,27 +554,43 @@ def fig23_hvc_phase_structure(cells, n_sl, codes, n_slc):
         print(f"    {k:6s} |dv|<25: {q[i0,1]:.2f} [{q[i0,0]:.2f},{q[i0,2]:.2f}]"
               f"   |dv|~112: {q[i1,1]:.2f} [{q[i1,0]:.2f},{q[i1,2]:.2f}]"
               f"   |dv|~412: {q[-4,1]:.2f}")
-    print("\n  median log10(Z/Zsun) of HVC gas, inflow vs outflow (+/- 1sigma bootstrap):")
-    print(f"  {'ion':6s} {'inflow':>22s} {'outflow':>22s} {'out-in':>8s}  verdict")
+    print("\n  median log10(Z/Zsun) of HVC gas, inflow vs outflow.")
+    print("  [] = 16-84 GALAXY bootstrap (the honest interval); () = sightline bootstrap,")
+    print("  shown only to expose how much narrower it is (typically 5-8x).")
+    print(f"  {'ion':6s} {'inflow (galaxy boot)':>26s} {'outflow (galaxy boot)':>26s} "
+          f"{'out-in':>8s} {'sl-boot hw':>11s}  verdict")
+    sep = np.zeros(len(IONSEQ), bool)
     for i, k in enumerate(IONSEQ):
         vin = f"{zin[i,0]:+.3f} [{zin[i,1]:+.3f},{zin[i,2]:+.3f}]"
         vout = f"{zout[i,0]:+.3f} [{zout[i,1]:+.3f},{zout[i,2]:+.3f}]"
-        sig = (zout[i, 1] > zin[i, 2]) or (zin[i, 1] > zout[i, 2])
+        sep[i] = (zout[i, 1] > zin[i, 2]) or (zin[i, 1] > zout[i, 2])
+        hw_sl = 0.25 * ((zin_sl[i, 2] - zin_sl[i, 1]) + (zout_sl[i, 2] - zout_sl[i, 1]))
         verdict = ("outflow metal-richer" if dz[i] > 0 else "inflow metal-richer")
-        verdict += " (1sigma-separated)" if sig else " (consistent)"
-        print(f"  {k:6s} {vin:>22s} {vout:>22s} {dz[i]:+8.3f}  {verdict}")
+        verdict += " (1sigma-separated)" if sep[i] else " (CONSISTENT at 1sigma)"
+        print(f"  {k:6s} {vin:>26s} {vout:>26s} {dz[i]:+8.3f} {hw_sl:11.3f}  {verdict}")
     cool = [IONSEQ.index(k) for k in ("HI", "OI", "CII", "SiII")]
     hot = [IONSEQ.index(k) for k in ("SiIV", "CIV", "NV", "OVI")]
     nz = np.isfinite(dz)
+    n_hot_sep = int(sep[hot].sum())
+    n_cool_sep = int(sep[cool].sum())
     print(f"\n  VERDICT (data-driven, not assumed):")
     print(f"   * warm-hot ions (Si IV -> O VI): outflow is metal-RICHER than inflow by "
           f"{np.mean(dz[hot]):+.2f} dex on average")
-    print(f"     ({int((dz[hot] > 0).sum())}/4 ions, all 1sigma-separated) -- this IS the "
-          f"metal-enriched fountain/ejecta signature.")
+    print(f"     ({int((dz[hot] > 0).sum())}/4 ions positive, {n_hot_sep}/4 separated at "
+          f"1sigma on GALAXY resampling)")
+    print(f"     -- the metal-enriched fountain/ejecta signature." if n_hot_sep >= 3 else
+          f"     -- NOT resolved once galaxy-to-galaxy scatter is included.")
     print(f"   * cool low ions (H I -> Si II): the sign REVERSES, outflow is metal-POORER "
           f"by {np.mean(dz[cool]):+.2f} dex")
-    print(f"     ({int((dz[cool] < 0).sum())}/4 ions). The cool HVC inflow is therefore NOT "
-          f"metal-poor accretion.")
+    print(f"     ({int((dz[cool] < 0).sum())}/4 ions negative, {n_cool_sep}/4 separated at "
+          f"1sigma on GALAXY resampling).")
+    print("     CAVEAT, do not over-read: this contrast is a property of the COLUMN-WEIGHTED")
+    print("     statistic.  Taking the same cells unweighted (per-cell median over cells")
+    print("     with N_ion > 0) the cool-ion sign FLIPS to outflow metal-richer by ~+0.10")
+    print("     dex, while the warm-hot result is unchanged (+0.17).  Dropping the heaviest")
+    print("     1 per cent of cells halves the cool contrast (-0.077 -> -0.045) and leaves")
+    print("     the hot one intact.  So 'cool HVC inflow is not metal-poor accretion' holds")
+    print("     for the observable (column-weighted) gas, not for the cell population.")
     print(f"   * absolute level: every HVC median is "
           f"{np.nanmin([zin[:, 0].min(), zout[:, 0].min()]):+.2f} to "
           f"{np.nanmax([zin[:, 0].max(), zout[:, 0].max()]):+.2f} dex, i.e. "
@@ -545,14 +623,21 @@ ZPB = np.arange(0.0, 150.1, 15.0)          # |z_disk| profile bins [kpc]
 
 
 def _colmap(R, z, w, hv):
-    """Fraction of an ion's HVC column per (R_disk, z_disk) pixel."""
+    """Fraction of an ion's TOTAL HVC column per (R_disk, z_disk) pixel.
+
+    Normalised by the full HVC column, NOT by the part that falls inside the plotted box:
+    9-10 per cent of the O VI / C IV / N V HVC column lies at |z| > 150 kpc or R > 80 kpc
+    and would otherwise be silently absorbed into the denominator, inflating every pixel of
+    those maps by ~1.1x.  Returns (map, in_box_fraction)."""
     m = hv & (w > 0)
     h, _, _ = np.histogram2d(R[m], z[m], bins=[RB, ZB], weights=w[m])
-    tot = h.sum()
-    return h / tot if tot > 0 else h
+    tot = float(w[m].sum())
+    if tot <= 0:
+        return h, np.nan
+    return h / tot, float(h.sum() / tot)
 
 
-def fig24_geometry_of_the_flow(cells, n_sl, codes, n_slc):
+def fig24_geometry_of_the_flow(cells, n_sl, codes, n_slc, gcodes, n_gal):
     adv = cells["dv"].abs().to_numpy()
     vr = cells["v_r"].to_numpy()
     R = cells["R_disk"].to_numpy()
@@ -564,7 +649,9 @@ def fig24_geometry_of_the_flow(cells, n_sl, codes, n_slc):
     a, b, c, d = ax[0, 0], ax[0, 1], ax[1, 0], ax[1, 1]
 
     # ── (a),(b) HVC column maps in (R_disk, z_disk) ─────────────────────────────
-    maps = {k: _colmap(R, z, cells[f"N_{k}"].to_numpy(), hv) for k in ("SiII", "OVI")}
+    _mm = {k: _colmap(R, z, cells[f"N_{k}"].to_numpy(), hv) for k in ("SiII", "OVI")}
+    maps = {k: v[0] for k, v in _mm.items()}
+    inbox = {k: v[1] for k, v in _mm.items()}
     pos = np.concatenate([m[m > 0] for m in maps.values()])
     vmax = np.log10(pos.max())
     vmin = vmax - 3.5
@@ -588,11 +675,13 @@ def fig24_geometry_of_the_flow(cells, n_sl, codes, n_slc):
         cb = fig.colorbar(pm, ax=axi, fraction=0.05, pad=0.02)
         cb.set_label(r"$\log_{10}$ (fraction of HVC $N_{\rm ion}$ per pixel)")
         S.panel_label(axi, lab)
-        note = (ILAB[k] + " HVC column\n" + r"contours: 50, 90" + _pct() + " of the column")
-        if k == "SiII":
-            note += ("\n" + r"rays $\parallel$ disk normal to $\sim\!23^\circ$:"
-                     + "\n" + r"blank $=$ geometrically unsampled")
-        boxtext(axi, 0.975, 0.50, note, ha="right", va="center")
+        note = (ILAB[k] + " HVC column\n"
+                + r"contours: 50, 90" + _pct() + " of the PLOTTED column\n"
+                + (r"%.1f" % (100 * inbox[k])) + _pct()
+                + " of the total HVC column\nis inside this box")
+        note += ("\n" + r"rays $\parallel$ disk normal to $\sim\!23^\circ$:"
+                 + "\n" + r"blank $=$ geometrically unsampled")
+        boxtext(axi, 0.975, 0.50, note, ha="right", va="center", fs=7.6)
         # quantitative extent of the 50%-enclosing region
         m50 = img >= lv[0]
         ext[k] = (float(np.max(np.abs(zc)[m50.any(0)])) if m50.any() else np.nan,
@@ -618,12 +707,8 @@ def fig24_geometry_of_the_flow(cells, n_sl, codes, n_slc):
     c.set_ylabel(r"$\log_{10}(T/\mathrm{K})$")
     cb = fig.colorbar(pm, ax=c, fraction=0.05, pad=0.13)
     cb.set_label(r"$\langle v_r\rangle$ of HVC gas $\ [\mathrm{km\,s^{-1}}]$")
-    for k in ("HI", "SiIII", "SiIV", "CIV", "NV", "OVI"):
-        mt = wmedian(logT[hv], cells[f"N_{k}"].to_numpy()[hv])
-        c.plot([1.0, 1.022], [mt] * 2, color=ICOL[k], lw=2.4, clip_on=False, zorder=6,
-               solid_capstyle="butt", transform=c.get_yaxis_transform())
-        c.text(1.032, mt, ILAB[k], color=ICOL[k], fontsize=8.0, ha="left", va="center",
-               transform=c.get_yaxis_transform(), clip_on=False, zorder=6)
+    medT_hv = {k: wmedian(logT[hv], cells[f"N_{k}"].to_numpy()[hv]) for k in IONSEQ}
+    ion_temp_ticks(c, medT_hv, IONSEQ)
     S.panel_label(c, "(c)")
     boxtext(c, 0.975, 0.06, r"HVC cells; ticks $=$ median $T$ per ion",
             ha="right", va="bottom")
@@ -632,14 +717,18 @@ def fig24_geometry_of_the_flow(cells, n_sl, codes, n_slc):
     zres = {}
     for k in IONSEQ:
         wk = cells[f"N_{k}"].to_numpy()
-        xc, f, lo, hi, tot = flow_profile(az, wk, vr, ZPB, codes, n_slc, seed=31, sub=hv)
+        xc, f, lo, hi, tot = flow_profile(az, wk, vr, ZPB, gcodes, n_gal, seed=31, sub=hv)
         zres[k] = (xc, f, lo, hi, tot)
         d.plot(xc, f, "-", color=ICOL[k], lw=2.0, label=ILAB[k], zorder=4)
         if k in ANCHORS:
             d.fill_between(xc, lo, hi, color=ICOL[k], alpha=0.20, lw=0, zorder=2)
     d.axhline(0.5, color="0.25", ls="--", lw=1.3, zorder=3)
     d.set_xlim(0, ZPB[-1])
-    d.set_ylim(0.15, 1.0)
+    # data-driven: the galaxy-level bands are much wider than the old sightline ones and
+    # a hardcoded (0.15, 1.0) window silently clipped them at large |z|
+    _lo = np.nanmin([np.nanmin(zres[k][2]) for k in IONSEQ])
+    _hi = np.nanmax([np.nanmax(zres[k][3]) for k in IONSEQ])
+    d.set_ylim(max(0.0, _lo - 0.04), min(1.02, _hi + 0.04))
     d.set_xlabel(r"$|z_{\mathrm{disk}}|\ [\mathrm{kpc}]$")
     d.set_ylabel(r"inflowing fraction of HVC ion column")
     d.text(0.975, 0.955, "inflow-dominated", transform=d.transAxes, color=S.INFLOW,
@@ -660,7 +749,9 @@ def fig24_geometry_of_the_flow(cells, n_sl, codes, n_slc):
     for k in ("SiII", "OVI"):
         zmax, rmax, area = ext[k]
         print(f"  {k:5s} 50%-enclosing region: |z| up to {zmax:6.1f} kpc, "
-              f"R up to {rmax:6.1f} kpc, area {area:8.0f} kpc^2")
+              f"R up to {rmax:6.1f} kpc, area {area:8.0f} kpc^2   "
+              f"({100 * inbox[k]:.1f}% of the total HVC column is inside the plotted "
+              f"R in [20,80], |z| < 150 kpc box; the contours enclose 50/90% of THAT part)")
     for k in IONSEQ:
         wk = cells[f"N_{k}"].to_numpy()
         m = hv & (wk > 0)
@@ -703,7 +794,7 @@ def fig24_geometry_of_the_flow(cells, n_sl, codes, n_slc):
 # ═══════════════════════════════════════════════════════════════════════════════
 # fig25 -- velocity extent of each phase
 # ═══════════════════════════════════════════════════════════════════════════════
-def fig25_velocity_extent(cells, n_sl, codes, n_slc):
+def fig25_velocity_extent(cells, n_sl, codes, n_slc, gcodes, n_gal):
     adv = cells["dv"].abs().to_numpy()
     fig, ax = plt.subplots(1, 2, figsize=(13.6, 5.6))
     a, b = ax
@@ -793,22 +884,29 @@ def main():
     print(f"FIGDIR = {S.FIGDIR}")
     print("=" * 78)
     cells, n_sl = L.load_cells(VARIANT)
-    codes, n_slc = slcodes(cells)
+    codes, n_slc = slcodes(cells)            # sightline units (reported, not plotted)
+    gcodes, n_gal = galcodes(cells)          # GALAXY units -- what every band uses
     adv = cells["dv"].abs()
     print(f"{len(cells)} absorbing cells | {n_sl} sightlines with v_ISM | "
-          f"{n_slc} distinct sightlines in the catalog")
+          f"{n_slc} distinct sightlines in the catalog | {n_gal} galaxies")
+    print("SAMPLE: absorbing-cell catalog, Tier-0b clean mask applied (periodic-wrap and")
+    print("        hypervelocity cells removed); ION-level, column-weighted throughout.")
+    print("UNCERTAINTIES: every plotted band/error bar resamples GALAXIES (n=%d), not"
+          % n_gal)
+    print("        sightlines -- see galcodes().  Sightline-level intervals are printed")
+    print("        alongside for reference and are 5-8x narrower.")
     print(f"HVC cells (|dv|>={HVC:.0f}): {int((adv >= HVC).sum())} "
           f"({100 * (adv >= HVC).mean():.1f}% of cells)")
     print(f"ions: {IONSEQ}")
 
     out = []
-    p, _ = fig22_inflow_outflow_vs_velocity(cells, n_sl, codes, n_slc)
+    p, _ = fig22_inflow_outflow_vs_velocity(cells, n_sl, codes, n_slc, gcodes, n_gal)
     out.append(p)
-    p, _ = fig23_hvc_phase_structure(cells, n_sl, codes, n_slc)
+    p, _ = fig23_hvc_phase_structure(cells, n_sl, codes, n_slc, gcodes, n_gal)
     out.append(p)
-    p, _ = fig24_geometry_of_the_flow(cells, n_sl, codes, n_slc)
+    p, _ = fig24_geometry_of_the_flow(cells, n_sl, codes, n_slc, gcodes, n_gal)
     out.append(p)
-    p, _ = fig25_velocity_extent(cells, n_sl, codes, n_slc)
+    p, _ = fig25_velocity_extent(cells, n_sl, codes, n_slc, gcodes, n_gal)
     out.append(p)
 
     print("\n" + "=" * 78)

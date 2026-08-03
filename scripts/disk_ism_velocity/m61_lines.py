@@ -7,44 +7,31 @@ The project's detection product is the pyGad Voigt fit of every mock spectrum, l
 line (`m61_voigt.py`): a DETECTION is a fitted component with uplim == False. That is the
 pipeline's definition and the only one used in the paper.
 
-The curve-of-growth machinery below (`Line.N_limit`, `W_from_N`, `N_from_W`) was an
-earlier attempt to synthesise a detection threshold from oscillator strengths. It is NOT
-how detection is defined and must NOT be used for covering fractions, detection rates or
-any per-transition statistic. It is kept only because it is harmless as a descriptive
-scaling, and removing it would break callers mid-run.
+A curve-of-growth `N_limit()` / `W_from_N()` / `N_from_W()` used to live here, to synthesise
+a detection threshold from oscillator strengths. **They have been deleted.** They were not
+how detection is defined, they gave the wrong answer (they flattened the Si II triplet's
+covering-fraction spread from a factor 1.22 to ~1.1), and leaving them exported was a
+foot-gun for the next author. If you find yourself wanting them, you want `m61_voigt` instead.
 
 What this module IS for: loading the per-cell absorbing-gas catalog and computing
 column-weighted, ION-level physical quantities (v_r, metallicity, temperature, phase
 structure) that exist only in the simulation and have no counterpart in the fits.
-For ION-level gas statistics the three Si II transitions are mathematically degenerate
-(they share N_SiII) -- so gas figures are labelled by ION, and the transition-resolved
-results come from the Voigt catalog.
 
-Original rationale (superseded, kept for context)
--------------------------------------------------
-The v1/v2/v3 paper figures are per-ION: they weight by the gas column N_ion from the
-absorber catalog. But the observable is a *transition*, and Si II is observed through
-three lines in the COS-G130M band (lambda 1190, 1193, 1260) whose strengths differ by
-f*lambda = 1 : 0.46 : 0.22. Those three lines share the SAME N_SiII, so any statistic
-that depends only on the column is identical for all three; what differs is how much of
-that column is *detectable*.
+For ION-level gas statistics the three Si II transitions are mathematically DEGENERATE --
+they share the single column N_SiII, so any column-weighted statistic is identical for all
+three. Gas figures are therefore labelled by ION, never by transition, and all
+transition-resolved results come from the Voigt catalog. Do not plot three identical Si II
+curves off N_SiII.
 
-So there are exactly two honest ways a Si II transition can enter a figure, and this
-module supplies both:
+Atomic data (lambda_0, f) are Trident's `lines.txt` values -- the ones used to synthesise
+the spectra. NOTE these are the *synthesis* wavelengths; pyGad fit Si II 1260 at a different
+rest wavelength (1260.522 vs 1260.422), which is corrected in the Voigt catalog. See
+VOIGT_CATALOG.md.
 
-  (1) SPECTRUM-BASED  -- statistics measured off the mock LSF spectra
-      (`spectrum_by_line/<key>/lsf`). Saturation, blending and line strength all enter
-      naturally, so the three Si II lines are genuinely independent curves.
-
-  (2) DETECTION-LIMITED COLUMN  -- gas-catalog statistics restricted to the column that
-      the given transition could actually detect, N > N_limit(line). N_limit follows the
-      linear curve of growth for a fixed equivalent-width limit, so the three Si II
-      transitions give three distinct curves that differ *only* through line strength.
-
-Never plot three identical Si II curves from raw N_SiII: use (1) or (2).
-
-Atomic data (lambda_0, f) are read straight out of Trident's `lines.txt`, i.e. exactly
-the values used to synthesise the mock spectra, so the registry cannot drift from the data.
+CAVEAT on denominators: `load_cells` reports 14,400 sightlines with a finite v_ISM, but only
+14,205 appear in the cell catalog -- 195 sightlines intersect no absorbing cell at all. That
+is harmless for the column-weighted gas statistics here, but `n_sl` must NOT be used as a
+covering-fraction denominator. Covering fractions live in `m61_voigt`.
 
 Usage:
     import m61_lines as L
@@ -73,9 +60,8 @@ HVC = 100.0
 # sightline identity in the catalog
 SLKEY = ["sid", "mode", "alpha"]
 
-# equivalent-width limit adopted for "detectable" (COS G130M, S/N ~ 10 per resel).
-# 3-sigma W limit; used to convert a line's f*lambda^2 into a column floor.
-W_LIMIT_MA = 50.0
+# NOTE: an equivalent-width "detection limit" constant used to live here. Removed --
+# detection comes from the Voigt fits (m61_voigt.py), never from a synthesised threshold.
 
 # ---------------------------------------------------------------------------------
 # atomic data -- taken from Trident's line list (the same data that made the spectra)
@@ -108,7 +94,7 @@ ION_LAB = {"HI": r"$\mathrm{H\,I}$", "OI": r"$\mathrm{O\,I}$", "CII": r"$\mathrm
 
 
 class Line:
-    """One transition: atomic data + plotting style + curve-of-growth helpers."""
+    """One transition: atomic data + plotting style. No detection logic -- see m61_voigt."""
 
     __slots__ = ("key", "ion", "lam0", "fosc", "label", "ls", "lw", "color")
 
@@ -119,33 +105,13 @@ class Line:
 
     # ---- curve of growth (linear/optically-thin regime) --------------------------
     # W_lambda[mA] = 8.8524e-18 * N[cm^-2] * f * lambda[A]^2
-    _COG = 8.8524e-18
-
     @property
     def strength(self):
-        """f * lambda -- the quantity that sets optical depth. Si II 1260 is the ref."""
+        """f * lambda -- descriptive only (orders the Si II triplet). NOT a detection scale."""
         return self.fosc * self.lam0
 
-    def W_from_N(self, N):
-        """Linear-COG equivalent width [mA] for column N [cm^-2] (upper bound: real
-        lines saturate, so this over-predicts W once tau_0 >~ 1)."""
-        return self._COG * np.asarray(N, float) * self.fosc * self.lam0 ** 2
-
-    def N_from_W(self, W_mA):
-        """Column [cm^-2] that produces W_mA on the linear part of the COG."""
-        return np.asarray(W_mA, float) / (self._COG * self.fosc * self.lam0 ** 2)
-
-    def N_limit(self, W_mA=W_LIMIT_MA):
-        """Detection floor: the smallest column this transition can reveal at W_mA."""
-        return float(self.N_from_W(W_mA))
-
-    def tau_int(self, N):
-        """Velocity-integrated apparent optical depth [km/s] for column N.
-        AOD:  N = 3.768e14 * int(tau) dv / (f * lambda)."""
-        return np.asarray(N, float) * self.fosc * self.lam0 / 3.768e14
-
     def __repr__(self):
-        return f"<Line {self.key} f*lam={self.strength:.1f} Nlim={self.N_limit():.2e}>"
+        return f"<Line {self.key} f*lam={self.strength:.1f}>"
 
 
 LINES = [Line(*d) for d in _LINEDATA]
@@ -253,9 +219,8 @@ def combined_ray_path(sid):
 
 
 if __name__ == "__main__":
-    print(f"{'line':14s} {'ion':6s} {'lam0':>9s} {'f':>7s} {'f*lam':>8s} "
-          f"{'rel':>6s} {'N_lim(50mA)':>12s}")
+    print(f"{'line':14s} {'ion':6s} {'lam0':>9s} {'f':>7s} {'f*lam':>8s} {'rel':>6s}")
     ref = LINE_BY_KEY["Si_II_1260"].strength
     for L in LINES:
         print(f"{L.key:14s} {L.ion:6s} {L.lam0:9.3f} {L.fosc:7.3f} {L.strength:8.1f} "
-              f"{L.strength / ref:6.3f} {L.N_limit():12.3e}")
+              f"{L.strength / ref:6.3f}")

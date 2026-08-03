@@ -174,7 +174,11 @@ def build_sid(sid):
     # Metals are <=2.8%. Flagged, not dropped: a saturated damped line genuinely has a high
     # column, we simply cannot measure how high.
     C["logN_at_ceiling"] = C["logN"] >= C["fit_logN_max"] - 0.05
-    # outside the velocity range common to all lines -- unfair for cross-line comparison
+    # outside the velocity range common to all lines -- unfair for cross-line comparison.
+    # NOTE min() over the two variants, so a component is flagged only if BOTH exceed the
+    # window. That makes the clean sample IDENTICAL for v3a and v3b (so the two variants are
+    # directly comparable, which is the point of fig21), at the cost of the v3a figures using
+    # a cut partly defined by v3b. ~0.06% of components sit at |dv|>500 in one variant only.
     C["beyond_common_window"] = C[["dv_v3a", "dv_v3b"]].abs().min(axis=1) > COMMON_WINDOW
 
     OUT.mkdir(parents=True, exist_ok=True)
