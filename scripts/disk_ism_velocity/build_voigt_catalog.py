@@ -42,7 +42,7 @@ NUM_FIELDS = ["EW_mA", "dEW_mA", "logN", "dlogN", "b_kms", "db_kms", "v_kms", "d
               "lambda_A", "Chisq", "Nregions",
               # fit CONFIGURATION -- differs per line and is essential for fair comparison
               "fit_velocity_window_kms", "fit_b_max_kms", "fit_b_min_kms", "fit_max_lines",
-              "fit_snr"]
+              "fit_snr", "fit_logN_min", "fit_logN_max"]
 BOOL_FIELDS = ["UpLim", "Sat"]
 
 # The narrowest velocity window used by any metal line. H I 1216 was fit over +-1200 km/s
@@ -168,6 +168,12 @@ def build_sid(sid):
     # profile rather than measuring a real cloud. Overwhelmingly an H I 1216 problem
     # (~59% of its components), essentially absent in the metals.
     C["b_at_ceiling"] = C["b_kms"] >= 0.999 * C["fit_b_max_kms"]
+    # logN pinned at the fitter's upper bound -- the column is the BOUND, not a measurement.
+    # Overwhelmingly H I again (57.5% of its clean components sit within 0.05 dex of the
+    # 19.52 bound, median 19.485), so any H I logN distribution or logN_1/2 is the bound.
+    # Metals are <=2.8%. Flagged, not dropped: a saturated damped line genuinely has a high
+    # column, we simply cannot measure how high.
+    C["logN_at_ceiling"] = C["logN"] >= C["fit_logN_max"] - 0.05
     # outside the velocity range common to all lines -- unfair for cross-line comparison
     C["beyond_common_window"] = C[["dv_v3a", "dv_v3b"]].abs().min(axis=1) > COMMON_WINDOW
 

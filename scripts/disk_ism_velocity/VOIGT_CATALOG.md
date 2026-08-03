@@ -78,15 +78,25 @@ corrected it is **+0.91**. `build_voigt_catalog.py` now recovers this per row an
 itself if any other line list ever drifts.
 
 This was the cause of two things previously misattributed:
-* The Si II 1260 red/blue excess present at **all** velocities (including low |dv|, where the
-  S II lambda1259.519 blend at dv = +214.8 km/s cannot reach) was the zero-point, not the
-  blend. Uncorrected `f_blue - f_red` = -0.098 for Si II 1260 against -0.003…-0.022 for every
-  other line; corrected it falls in line at about -0.016.
+* The Si II 1260 red/blue excess. It was briefly blamed on an S II lambda1259.519 blend at
+  dv = +214.8 km/s. **That blend does not exist**: `batch/run_spectra_array.sh:29` synthesises
+  exactly nine transitions (Si II 1190/1193/1260, Si III 1206, Si IV 1403, C II 1335, O I 1302,
+  N V 1239, H I 1216) — no S II, no Fe II 1260.533, no C I 1260.736 — so no species can blend
+  into the window. Searching the corrected catalog for a residual finds none: the +215+-20 km/s
+  excess over lambda1193 is +11.4% (Poisson sigma 3.5%), statistically identical to the mirror
+  window at -215 (+13.6%). The whole effect was the zero-point. Uncorrected `f_blue - f_red`
+  = -0.098 for Si II 1260 against -0.003…-0.022 for every other line; corrected, **-0.017**,
+  in line with lambda1193 (-0.009) and lambda1190 (-0.010).
 * The "+23.5 km/s median offset" seen when the velocity convention was first validated
   against the Si II dip. The convention was right; this systematic was the whole offset.
 
 ## Traps
 
+* **H I's fitted `logN` is the fitter's upper bound, not a measurement.** 57.5% of clean H I
+  components sit within 0.05 dex of the `fit_logN_max` = 19.52 ceiling (median 19.485), so any
+  H I logN distribution, median or `logN_1/2` is reporting the bound. Metals are <= 2.8%.
+  Flagged as `logN_at_ceiling` — not dropped, because a damped saturated line genuinely does
+  have a high column; we simply cannot measure how high.
 * **`dv_kms` is the UNCERTAINTY on `v_kms`, not a velocity offset.** It sits next to
   `logN`/`dlogN` in the pyGad output and is easy to misread. Stored here as **`v_err_kms`**.
   The kinematic offset is `dv_v3a` / `dv_v3b`.
@@ -113,7 +123,7 @@ The effect on the HVC covering fraction is large for H I and negligible for the 
 | C II 1335 | 0.402 | 0.389 | 1.6% | 1.5% |
 | Si II 1190 | 0.324 | 0.313 | 3.6% | 0.9% |
 | Si II 1193 | 0.358 | 0.344 | 6.2% | 0.9% |
-| Si II 1260 | 0.432 | 0.392 | 14.0% | 1.3% |
+| Si II 1260 | 0.421 | 0.382 | 14.0% | 1.3% |
 | Si III 1206 | 0.455 | 0.443 | 2.4% | 1.4% |
 | Si IV 1403 | 0.391 | 0.382 | 1.7% | 1.3% |
 | N V 1239 | 0.270 | 0.260 | 1.8% | 1.6% |
@@ -126,9 +136,13 @@ covering-fraction ordering.
 ## Headline results
 
 * Si II covering fraction orders by line strength, from the fits alone:
-  **0.392 / 0.344 / 0.313** (clean) for λ1260 / λ1193 / λ1190 — f·λ = 1487 / 686 / 330.
-  A single-transition "HVC covering fraction" is therefore uncertain at the ~25% level
-  purely through the choice of line.
+  **0.382 / 0.344 / 0.313** (clean, zero-point corrected) for λ1260 / λ1193 / λ1190 —
+  f·λ = 1487 / 686 / 330. A single-transition "HVC covering fraction" is therefore uncertain
+  at the ~22% level purely through the choice of line. The ordering survives every stress
+  test applied: matching the fitting windows, the λ1260 zero-point correction, and raw-vs-clean.
+* The mechanism is measured, not assumed: the weak transitions recover **+0.215 dex (λ1193)**
+  and **+0.408 dex (λ1190)** more column than the saturated λ1260, ordered by f·λ, and their
+  completeness relative to λ1260 rises from ~0.15 at logN≈11.9 to ~0.86 at logN≈13.9.
 * **v3a and v3b agree to 0.0003–0.0030 per line** (clean sample; the largest is N V at
   0.0030, Si II 1260 is 0.0012). The observables are insensitive to which per-orientation
   v_ISM variant is adopted.

@@ -21,7 +21,7 @@ FIGDIR = Path("/scratch/tsingh65/m61-tng/outputs/disk_ism_velocity/paper_figures
 # kinematic class of an absorber by |dv| = |v_los - v_ISM|
 CLASS = {"ISM": "#4C4C4C", "IVC": "#E19A3C", "HVC": "#B02418"}   # grey / amber / brick-red
 CLASS_LABEL = {"ISM": r"ISM ($|\Delta v|<40$)", "IVC": r"IVC ($40\!-\!100$)",
-               "HVC": r"HVC ($|\Delta v|>100$)"}
+               "HVC": r"HVC ($|\Delta v|\geq100$)"}   # >= : matches every computation
 # inflow / outflow (diverging): blue = inflow (v_r<0), red = outflow (v_r>0)
 INFLOW = "#2166AC"
 OUTFLOW = "#B2182B"
